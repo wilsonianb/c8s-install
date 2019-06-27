@@ -2,8 +2,8 @@
 # File              : codius-install.sh
 # Author            : N3TC4T <netcat.av@gmail.com>
 # Date              : 16.06.2018
-# Last Modified Date: 08.08.2018
-# Last Modified By  : N3TC4T <netcat.av@gmail.com>
+# Last Modified Date: 07.03.2019
+# Last Modified By  : wilsonianb <brandon@coil.com>
 # Copyright (c) 2018 N3TC4T <netcat.av@gmail.com>
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -33,14 +33,10 @@ SLEEP_SEC=10
 LOG_OUTPUT="/tmp/${0##*/}$(date +%Y-%m-%d.%H-%M)"
 CURRENT_USER="$(id -un 2>/dev/null || true)"
 BASE_DIR=$(cd "$(dirname "$0")"; pwd); cd ${BASE_DIR}
-INSTALLER_URL="https://raw.githubusercontent.com/N3TC4T/codius-install/master/codius-install.sh"
-########## Hyperd ##########
-HYPERD_URL="https://codius-hyper-install.s3.amazonaws.com/hyper-bootstrap.sh"
-########## Nodejs ##########
-NODEJS_RPM_URL="https://rpm.nodesource.com/setup_10.x"
-NODEJS_DEB_URL="https://deb.nodesource.com/setup_10.x"
-########## Certbot ##########
-CERTBOT_AUTO_URL="https://dl.eff.org/certbot-auto"
+INSTALLER_URL="https://raw.githubusercontent.com/wilsonianb/codius-install/k8s/codius-install.sh"
+K8S_MANIFEST_PATH="https://raw.githubusercontent.com/wilsonianb/codius-install/k8s/manifests"
+########## k3s ##########
+K3S_URL="https://get.k3s.io"
 ########## Constant ##########
 SUPPORT_DISTRO=(debian ubuntu fedora centos)
 UBUNTU_CODE=(trusty utopic vivid wily xenial)
@@ -111,7 +107,7 @@ function spin_wait() {
     local spinstr=$tmp${spinstr%"$tmp"}
     sleep ${SPIN_DELAY}
   done
-  printf "\033[3D\033[K ${LIGHT}${GREEN}Done${RESET}"
+  printf "\033[3D\033[K ${LIGHT}${GREEN}Done ${RESET}"
   # printf "\r\033[K"
 }
 
@@ -318,23 +314,23 @@ install()
 
   # Hostname
   echo "[+] What is your Codius hostname?"
-  read -p "Hostname: " -e -i codius.example.com HOSTNAME
+  read -p "Hostname: " -e -i `uname -n` HOSTNAME
   if [[ -z "$HOSTNAME" ]]; then
     show_message error "No Hostname entered, exiting..."
     exit 0
   fi
 
-  # Wallet secret for Moneyd
-  echo "[+] What is your XRP wallet secret? This is required for you to receive XRP via Moneyd."
+  # # Wallet secret for Moneyd
+  # echo "[+] What is your XRP wallet secret? This is required for you to receive XRP via Moneyd."
 
-  while true; do
-    read -p "Wallet Secret: " -e SECRET
-    if [[ -z "$SECRET" ]] || ! [[ "$SECRET" =~ ^s[a-zA-Z0-9]{28,}+$ ]] ; then
-      show_message error "Invalid wallet secret entered, try again..."
-    else
-      break
-    fi
-  done
+  # while true; do
+  #   read -p "Wallet Secret: " -e SECRET
+  #   if [[ -z "$SECRET" ]] || ! [[ "$SECRET" =~ ^s[a-zA-Z0-9]{28,}+$ ]] ; then
+  #     show_message error "Invalid wallet secret entered, try again..."
+  #   else
+  #     break
+  #   fi
+  # done
 
 
   # Email for certbot
@@ -354,151 +350,16 @@ install()
   # Set hostname
   ${SUDO} hostnamectl set-hostname $HOSTNAME
 
-
-  # Repositories and required packages ====================================
-
-  show_message info "[+] Installing required packages..."
-
-  if [[ "${LSB_DISTRO}" == "centos" ]] && [[ "${CMAJOR}" == "7" ]];then
-    _exec "rpm -ivh https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm ; yum install -y gcc-c++ make epel-release git"
-  elif [[ "${LSB_DISTRO}" == "centos" ]] && [[ "${CMAJOR}" == "6" ]];then
-    _exec "rpm -ivh https://dl.fedoraproject.org/pub/epel/epel-release-latest-6.noarch.rpm ; yum install -y gcc-c++ make epel-release git"
-  elif [[ "${LSB_DISTRO}" == "ubuntu" ]];then
-    _exec "apt-get install -y software-properties-common ; add-apt-repository ppa:certbot/certbot ; apt-get install -y build-essential git qemu-kvm libvirt0 aufs-tools"
-  elif [[ "${LSB_DISTRO}" == "debian" ]];then
-    _exec "apt-get update ; apt-get install -y build-essential git qemu-kvm libvirt0 aufs-tools"
-  fi
-
-
-  # Hyperd ==============================================
-
-  show_message info "[+] Installing Hyperd... "
-
-  ${SUDO} ${CURL_C} /tmp/hyper-bootstrap.sh ${HYPERD_URL} >>"${LOG_OUTPUT}" 2>&1 && ${SUDO} chmod a+x /tmp/hyper-bootstrap.sh
-
-  _exec bash /tmp/hyper-bootstrap.sh
-
-  show_message info "[*] Starting Hyperd... "
-
-  if [[ "${INIT_SYSTEM}" == "systemd" ]];then
-    _exec "systemctl daemon-reload; systemctl enable hyperd; systemctl restart hyperd"
-  else
-    _exec "service hyperd enable; service hyperd restart"
-  fi
-
-
-  # ============================================== Hyperd
-
-  # Nodejs ==============================================
-
-  show_message info "[+] Installing Nodejs... "
-
-
-  if [[ "${LSB_DISTRO}" == "centos"  ]] || [[ "${LSB_DISTRO}" == "fedora"  ]] ;then
-    ${SUDO} ${CURL_C} /tmp/nodejs_10.sh ${NODEJS_RPM_URL} >>"${LOG_OUTPUT}" 2>&1 && ${SUDO} chmod a+x /tmp/nodejs_10.sh
-    _exec "bash /tmp/nodejs_10.sh && yum install -y nodejs"
-  elif [[ "${LSB_DISTRO}" == "ubuntu" ]] || [[ "${LSB_DISTRO}" == "debian" ]] ;then
-    ${SUDO} ${CURL_C} /tmp/nodejs_10.sh ${NODEJS_DEB_URL} >>"${LOG_OUTPUT}" 2>&1 && ${SUDO} chmod a+x /tmp/nodejs_10.sh
-    _exec "bash /tmp/nodejs_10.sh && apt-get install -y nodejs"
-  fi
-
-  # ============================================== Nodejs
-
-  # Moneyd ==============================================
-
-  show_message info "[+] Installing Moneyd... "
-  # _exec yum install -y https://s3.us-east-2.amazonaws.com/codius-bucket/moneyd-xrp-4.0.0-1.x86_64.rpm
-  _exec npm install -g moneyd moneyd-uplink-xrp --unsafe-perm
-
-  ${SUDO} ${BASH_C} 'echo "[Unit]
-Description=ILP provider using XRP payment channels
-After=network.target nss-lookup.target
-
-[Service]
-ExecStart=/usr/bin/moneyd xrp:start
-Environment="DEBUG=*"
-Restart=always
-StandardOutput=syslog
-StandardError=syslog
-SyslogIdentifier=moneyd
-User=root
-Group=root
-
-[Install]
-WantedBy=multi-user.target" > /etc/systemd/system/moneyd-xrp.service'
-
-
-  # Configuring Moneyd and starting service
-  if [ -f ~/.moneyd.json ]; then
-    show_message warn "old ~/.moneyd.json config file found , backup to ~/.moneyd.json.back"
-    ${SUDO} mv ~/.moneyd.json ~/.moneyd.json.back
-  fi
-
-
-  # Todo: need to check
-  # https://github.com/N3TC4T/codius-install/issues/4
-
-  echo -ne "$SECRET\n" | ${SUDO} $(which moneyd) xrp:configure > /dev/null 2>&1 || { show_message error "${ERR_MONEYD_CONFIGURE[1]}" ; exit "${ERR_MONEYD_CONFIGURE[0]}" ; }
-
-  # this will generate an random channel name
-  #UUID_CHANNEL=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 32 | head -n 1)
-  #sed -i "s/btp+wss:\/\//&${UUID_CHANNEL}/g" ~/.moneyd.json
-
-
-  show_message info "[*] Starting Moneyd... "
-
-  if [[ "${INIT_SYSTEM}" == "systemd" ]];then
-    _exec "systemctl daemon-reload; systemctl enable moneyd-xrp ; systemctl restart moneyd-xrp"
-  else
-    _exec "service moneyd-xrp enable; service moneyd-xrp restart"
-  fi
-
-
-  # ============================================== Moneyd
-
-
-  # Codius ==============================================
-
-  show_message info "[+] Installing Codius... "
-  _exec npm install -g codiusd --unsafe-perm
-
-  ${SUDO} ${BASH_C} 'echo "[Unit]
-Description=Codiusd
-After=network.target nss-lookup.target
-[Service]
-ExecStart=/usr/bin/codiusd
-Environment="DEBUG=*"
-Environment="CODIUS_PUBLIC_URI=https://$HOSTNAME"
-Environment="CODIUS_XRP_PER_MONTH=10"
-Restart=always
-StandardOutput=syslog
-StandardError=syslog
-SyslogIdentifier=codiusd
-User=root
-Group=root
-[Install]
-WantedBy=multi-user.target" > /etc/systemd/system/codiusd.service'
-
-  show_message info "[*] Starting Codius..."
-
-  if [[ "${INIT_SYSTEM}" == "systemd" ]];then
-    _exec "systemctl daemon-reload; systemctl enable codiusd ; systemctl restart codiusd"
-  else
-    _exec "service codiusd enable ; service codiusd restart"
-  fi
-
-
-  # ============================================== Codius
-
   # Subdomain DNS ==============================================
   new_line
-  show_message info "[+] Please create two A records within your domain DNS like the examples below:"
+  show_message info "[+] Please create two A records and one NS record within your domain DNS like the examples below:"
   new_line
   cat <<EOF
 ------------------------------------------------------------
 
-$HOSTNAME.    300     IN      A       $IP
-*.$HOSTNAME.  300     IN      A       $IP
+$HOSTNAME.      300     IN      A       $IP
+*.$HOSTNAME.    300     IN      A       $IP
+acme.$HOSTNAME. 300     IN      NS      $HOSTNAME
 
 ------------------------------------------------------------
 EOF
@@ -506,7 +367,7 @@ EOF
   read -n1 -r -p "Press any key to continue..."
 
   while true; do
-    if ping -c1 -W1 $HOSTNAME &> /dev/null; then
+    if ping -c1 -W1 ping.$HOSTNAME &> /dev/null; then
       break
     else
       show_message warn "It looks like the $HOSTNAME cannot be resolved yet, waiting 30s... "
@@ -516,126 +377,150 @@ EOF
 
   # ============================================== Subdomain DNS
 
+  # k3s ==============================================
 
-  # CertBOt ==============================================
+  show_message info "[+] Installing k3s... "
+
+  ${SUDO} ${CURL_C} /tmp/k3s-install.sh ${K3S_URL} >>"${LOG_OUTPUT}" 2>&1 && ${SUDO} chmod a+x /tmp/k3s-install.sh
+
+  _exec bash /tmp/k3s-install.sh --cluster-cidr=192.168.0.0/16
+  sleep 10
+  _exec kubectl wait --for=condition=Available -n kube-system deployment/coredns
+  _exec kubectl wait --for=condition=complete --timeout=300s -n kube-system job/helm-install-traefik
+  _exec kubectl wait --for=condition=Available -n kube-system deployment/traefik
+
+  # ============================================== k3s
+
+  # Kata Containers ==============================================
+
+  show_message info "[+] Installing Kata Containers... "
+
+  _exec kubectl apply -f https://raw.githubusercontent.com/kata-containers/packaging/master/kata-deploy/kata-rbac.yaml
+  # ${SUDO} ${CURL_C} /tmp/kata-deploy.yaml https://raw.githubusercontent.com/kata-containers/packaging/master/kata-deploy/kata-deploy.yaml >>"${LOG_OUTPUT}" 2>&1
+  # sed -i s/katadocker/wilsonianbcoil/g /tmp/kata-deploy.yaml
+  # _exec kubectl apply -f /tmp/kata-deploy.yaml
+  _exec kubectl apply -f "${K8S_MANIFEST_PATH}/kata-deploy.yaml"
+  _exec kubectl rollout status ds -n kube-system kata-deploy
+  _exec kubectl apply -f https://raw.githubusercontent.com/kata-containers/packaging/master/kata-deploy/k8s-1.14/kata-qemu-runtimeClass.yaml
+
+  # ============================================== Kata Containers
+
+  # Calico ==============================================
+
+  show_message info "[+] Installing Calico policy enforcement... "
+
+  _exec kubectl apply -f https://docs.projectcalico.org/v3.7/manifests/calico-policy-only.yaml
+  _exec kubectl rollout status ds -n kube-system calico-node
+
+  # ============================================== Calico
+
+  # Local storage ==============================================
+
+  show_message info "[+] Installing Local path storage... "
+
+  _exec kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml
+  _exec kubectl rollout status deployment -n local-path-storage local-path-provisioner
+
+  # ============================================== Local storage
+
+  # Ingress nginx ==============================================
+
+  show_message info "[+] Installing NGINX Ingress Controller... "
+
+  _exec kubectl apply -f "${K8S_MANIFEST_PATH}/ingress-nginx.yaml"
+
+  # ============================================== Ingress nginx
+
+  # acme-dns ==============================================
+
+  show_message info "[+] Installing acme-dns... "
+
+  ${SUDO} ${CURL_C} /tmp/config.cfg https://raw.githubusercontent.com/joohoi/acme-dns/master/config.cfg >>"${LOG_OUTPUT}" 2>&1
+  sed -i s/auth.example.org/acme.$HOSTNAME/g /tmp/config.cfg
+  sed -i s/127.0.0.1/0.0.0.0/g /tmp/config.cfg
+  sed -i s/198.51.100.1/`ifconfig $(route -n | grep ^0.0.0.0 | awk '{print $NF}') | grep inet | grep -v inet6 | awk '{print $2}'`/g /tmp/config.cfg
+
+  _exec kubectl create namespace acme-dns
+  _exec kubectl create configmap acme-dns-config --namespace=acme-dns --from-file=/tmp/config.cfg
+  _exec kubectl apply -f "${K8S_MANIFEST_PATH}/acme-dns.yaml"
+  _exec kubectl wait --for=condition=Available --timeout=60s -n acme-dns deployment/acme-dns
+
+  # ============================================== acme-dns
+
+  # cert-manager ==============================================
+
+  show_message info "[+] Installing cert-manager... "
+
+  ${SUDO} ${CURL_C} /tmp/cert-manager.yaml https://github.com/jetstack/cert-manager/releases/download/v0.8.0/cert-manager.yaml >>"${LOG_OUTPUT}" 2>&1
+  sed -i '/cluster-resource-namespace/a \          - --dns01-recursive-nameservers=1.1.1.1:53,8.8.8.8:53' /tmp/cert-manager.yaml
+  _exec kubectl apply -f /tmp/cert-manager.yaml
+  _exec kubectl wait --for=condition=Available -n cert-manager deployment/cert-manager
+
+  # ============================================== cert-manager
+
+  # Certificate ==============================================
   show_message info "[+] Generating certificate for ${HOSTNAME}"
-  # certbot stuff
 
-  show_message info "[+] Installing CertBot... "
-  if [[ "${LSB_DISTRO}" == "centos"  ]] || [[ "${LSB_DISTRO}" == "fedora"  ]] ;then
-    _exec "yum -y install certbot"
-  elif [[ "${LSB_DISTRO}" == "ubuntu" ]];then
-    _exec "apt-get install -y certbot"
-  elif [[ "${LSB_DISTRO}" == "debian" ]];then
-    ${SUDO} ${CURL_C} /usr/bin/certbot ${CERTBOT_AUTO_URL} >>"${LOG_OUTPUT}" 2>&1 && ${SUDO} chmod a+x /usr/bin/certbot
-    _exec "/usr/bin/certbot"
-  fi
+  local ACME_DNS_IP=`kubectl describe pods --namespace=acme-dns --selector=app=acme-dns | grep IP | awk '{print $2}'`
+  local ACME_CREDS=`curl -sX POST http://$ACME_DNS_IP/register`
+  tee /tmp/acme-dns.json << EOF > /dev/null
+{"$HOSTNAME": $ACME_CREDS, "*.$HOSTNAME": $ACME_CREDS}
+EOF
 
+  local ACME_FULL_DOMAIN=`sed -e 's/[{}]/''/g' /tmp/acme-dns.json | awk -v RS=',"' -F: '/^fulldomain/ {print $2; exit;}' | tr -d \"`
   new_line
-  show_message warn "In the next step you need to create two TXT records on your DNS as part of the DNS challenge \nPlease wait some time after creating these records before continuing."
+  show_message info "[+] Please create a CNAME record within your domain DNS like the example below:"
+  new_line
+  cat <<EOF
+------------------------------------------------------------
+
+_acme-challenge.$HOSTNAME. 300     IN      CNAME      $ACME_FULL_DOMAIN
+
+------------------------------------------------------------
+EOF
+
   read -n1 -r -p "Press any key to continue..."
 
-  # if [[ "${USE_WGET}" == "true" ]];then
-  #       ${CURL_C} -O /usr/sbin/certbot-auto ${CERTBOT_URL} >>"${LOG_OUTPUT}" 2>&1 && chmod a+x /usr/sbin/certbot-auto
-  # else
-  #       ${CURL_C} /usr/sbin/certbot-auto ${NODEJS_URL} >>"${LOG_OUTPUT}" 2>&1 && chmod a+x /usr/sbin/certbot-auto
-  # fi
+  _exec kubectl create namespace codiusd
+  _exec kubectl create secret generic certmanager-secret --namespace=codiusd --from-file=/tmp/acme-dns.json
 
-  # certbot-auto --noninteractive --os-packages-only
+  ${SUDO} ${CURL_C} /tmp/codius-host-issuer.yaml "${K8S_MANIFEST_PATH}/codius-host-issuer.yaml" >>"${LOG_OUTPUT}" 2>&1
+  sed -i s/yourname@codius.example.com/$EMAIL/g /tmp/codius-host-issuer.yaml
+  _exec kubectl apply -f /tmp/codius-host-issuer.yaml
 
-  ${SUDO} certbot certonly --manual -d "${HOSTNAME}" -d "*.${HOSTNAME}" --agree-tos --email "${EMAIL}" --preferred-challenges dns-01  --server https://acme-v02.api.letsencrypt.org/directory
+  ${SUDO} ${CURL_C} /tmp/codius-host-certificate.yaml "${K8S_MANIFEST_PATH}/codius-host-certificate.yaml" >>"${LOG_OUTPUT}" 2>&1
+  sed -i s/codius.example.com/$HOSTNAME/g /tmp/codius-host-certificate.yaml
+  _exec kubectl apply -f /tmp/codius-host-certificate.yaml
+  _exec kubectl wait --for=condition=Ready --timeout=600s -n codiusd certificate/codius-host-certificate
 
-  # ============================================== CertBOt
+  # ============================================== Certificate
 
+  # Moneyd ==============================================
 
-  # Nginx ==============================================
+  show_message info "[+] Installing Moneyd... "
 
-  show_message info "[!] Installing Nginx... "
+  _exec kubectl create namespace moneyd
+  _exec kubectl run moneyd-config -n moneyd --image wilsonianbcoil/moneyd-xrp --generator=run-pod/v1 --restart=Never --command -- sleep 1000
+  _exec kubectl wait --for=condition=Ready --timeout=60s -n moneyd pod/moneyd-config
+  # echo -ne "$SECRET\n" | ${SUDO} $(which moneyd) xrp:configure > /dev/null 2>&1 || { show_message error "${ERR_MONEYD_CONFIGURE[1]}" ; exit "${ERR_MONEYD_CONFIGURE[0]}" ; }
+  kubectl exec moneyd-config -n moneyd -it -- /usr/local/bin/moneyd xrp:configure -t --advanced
+  _exec kubectl create secret generic moneyd-config -n moneyd --from-file=.moneyd.json=<(kubectl exec moneyd-config -n moneyd -- cat /root/.moneyd.test.json)
+  _exec kubectl delete pod moneyd-config -n moneyd
+  _exec kubectl apply -f "${K8S_MANIFEST_PATH}/moneyd.yaml"
+  _exec kubectl rollout status deployment -n moneyd moneyd
 
+  # ============================================== Moneyd
 
-  if [[ "${LSB_DISTRO}" == "centos"  ]] || [[ "${LSB_DISTRO}" == "fedora"  ]] ;then
-    # Install Package
-    # Selinux allow nginx
-    # Enable access for port 443 in firewalld
-    _exec "yum -y install nginx ; setsebool -P httpd_can_network_connect 1 ; firewall-cmd --zone=public --add-port=443/tcp --permanent ; firewall-cmd --reload"
+  # Codiusd =============================================
 
-  elif [[ "${LSB_DISTRO}" == "ubuntu" ]] || [[ "${LSB_DISTRO}" == "debian" ]] ;then
-    # Install Package
-    # Adjust the Firewall
-    _exec "apt-get install -y nginx ; ufw allow 'Nginx HTTP'"
+  show_message info "[+] Installing Codiusd... "
 
-  fi
+  ${SUDO} ${CURL_C} /tmp/codiusd.yaml "${K8S_MANIFEST_PATH}/codiusd.yaml" >>"${LOG_OUTPUT}" 2>&1
+  sed -i s/codius.example.com/$HOSTNAME/g /tmp/codiusd.yaml
+  _exec kubectl apply -f /tmp/codiusd.yaml
+  _exec kubectl rollout status deployment -n codiusd codiusd
 
-  # show_message done "[!] Success installed Nginx"
-
-  if [[ ! -e /etc/nginx/default.d ]]; then
-	  ${SUDO} mkdir /etc/nginx/default.d
-  fi
-
-  ${SUDO} echo 'return 301 https://$host$request_uri;' | ${SUDO} tee /etc/nginx/default.d/ssl-redirect.conf >> "${LOG_OUTPUT}" 2>&1
-
-  show_message info "[!] Generating SSL file... It takes a while, don't panic."
-
-  _exec openssl dhparam -out /etc/nginx/dhparam.pem 2048
-
-
-  if [[ ! -e /etc/nginx/conf.d ]]; then
-	  ${SUDO} mkdir /etc/nginx/conf.d
-  fi
-
-  ${SUDO} ${BASH_C} 'echo "
-map \$http_upgrade \$connection_upgrade {
-  default upgrade;
-  '\'''\'' \$http_connection;
-}
-server {
-    listen 443 ssl;
-
-    ssl_certificate /etc/letsencrypt/live/$HOSTNAME/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/$HOSTNAME/privkey.pem;
-
-    ssl_protocols TLSv1.2;
-    ssl_prefer_server_ciphers on;
-    ssl_dhparam /etc/nginx/dhparam.pem;
-    ssl_ciphers ECDHE-RSA-AES256-GCM-SHA512:DHE-RSA-AES256-GCM-SHA512:ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-SHA384;
-    ssl_ecdh_curve secp384r1;
-    ssl_session_timeout 10m;
-    ssl_session_cache shared:SSL:10m;
-    ssl_session_tickets off;
-    ssl_stapling on;
-    ssl_stapling_verify on;
-    resolver 1.1.1.1 1.0.0.1 valid=300s;
-    resolver_timeout 5s;
-    add_header Strict-Transport-Security '\''max-age=63072000; includeSubDomains; preload'\'';
-    add_header X-Frame-Options DENY;
-    add_header X-Content-Type-Options nosniff;
-    add_header X-XSS-Protection '\''1; mode=block'\'';
-
-    location / {
-      proxy_pass http://127.0.0.1:3000;
-      proxy_set_header Upgrade \$http_upgrade;
-      proxy_set_header Connection \$connection_upgrade;
-      proxy_buffering  off;
-      proxy_set_header Host \$host;
-      proxy_set_header X-Forwarded-For \$remote_addr;
-      proxy_connect_timeout	  300;
-      proxy_send_timeout   	  300;
-      proxy_read_timeout          300;
-      send_timeout                300;
-
-    }
-}" > /etc/nginx/conf.d/codius.conf'
-
-  show_message info "[*] Starting Nginx... "
-
-  if [[ "${INIT_SYSTEM}" == "systemd" ]];then
-    _exec "systemctl daemon-reload; systemctl enable nginx ; systemctl restart nginx"
-  else
-    _exec "service nginx enable ; service nginx restart"
-  fi
-
-  # ============================================== Nginx
-
+  # ============================================= Codiusd
 
   # ============================================== Finishing
   new_line
@@ -645,21 +530,9 @@ server {
   new_line
   show_message done "[-] You can check your Codius by opening https://$HOSTNAME or by searching for your host at https://codiushosts.com"
   show_message done "[-] For installation log visit $LOG_OUTPUT"
+  show_message done "[-] You can see everything running in your Kubernetes cluster by running: kubectl get all --all-namespaces"
   new_line
   printf '%*s\n' "${COLUMNS:-$(tput cols)}" '' | tr ' ' =
-
-
-  new_line
-  show_message warn "If you have problems opening Codius we recommend rebooting your system to complete the installation."
-  new_line
-  read -p "Reboot now? [y/N]: " -e REBOOT
-
-  if [[ "$REBOOT" = 'y' || "$REBOOT" = 'Y' ]]; then
-      echo "Rebooting ..."
-      ${SUDO} reboot
-  else
-    exit
-  fi
 }
 
 
@@ -760,10 +633,8 @@ clean(){
   check_os_distro
   check_deps_initsystem
 
-  local services=( hyperd moneyd-xrp codiusd nginx )
-
   show_message warn "This action will remove packages listed below and all configuration files belonging to them:
-  \n* Codiusd\n* Moneyd\n* Hyperd\n* Certbot\n* Nginx\n* Nodejs (npm & yarn)"
+  \n* k3s\n* Kata Containers\n* Codiusd\n* Moneyd"
 
   new_line
   read -p "Continue Anyway? [y/N]: " -e CONTINUE
@@ -772,59 +643,9 @@ clean(){
     exit 0
   fi
 
+  show_message info "[!] Stopping services... "
 
-  show_message info "[!] Stoping services... "
-  for i in "${services[@]}"
-  do
-    if [[ "${INIT_SYSTEM}" == "systemd" ]];then
-      ${SUDO} systemctl stop $i || true
-    else 
-      ${SUDO} service $i stop || true
-    fi
- done
-
-  # umount hyperd running pods 
-  for mount in `cat /proc/mounts | grep /run/hyper | awk '{ print $2 }'`; do umount $mount || true; done
-  for mount in `cat /proc/mounts | grep /var/lib/hyper/hosts | awk '{ print $2 }'`; do umount $mount || true; done
-
-  # remove packages from yarn
-  if (command_exist yarn);then
-    ${SUDO} yarn global remove moneyd codiusd moneyd-uplink-xrp || true
-  fi
-
-
-  # npm uninstall -g
-  ${SUDO} npm uninstall -g moneyd codiusd moneyd-uplink-xrp --unsafe-perm
-
-
-  if [[ "${LSB_DISTRO}" == "centos"  ]] || [[ "${LSB_DISTRO}" == "fedora"  ]] ;then
-      ${SUDO} yum remove -y nodejs hyperd nginx qemu-hyper hyperstart hyper-container certbot
-  elif [[ "${LSB_DISTRO}" == "ubuntu" ]] || [[ "${LSB_DISTRO}" == "debian" ]] ;then
-      for i in nodejs hyperd nginx qemu-kvm libvirt0 hyperstart hypercontainer certbot aufs-tools; do ${SUDO} apt-get -y remove $i || true ;done
-      ${SUDO} apt -y autoremove || true
-  fi
-
-  files_to_remove=("$HOME/.moneyd.json" "$HOME/.moneyd.json.back" "/etc/systemd/system/moneyd-xrp.service" "/etc/systemd/system/codiusd.service" , "/usr/bin/certbot", "/etc/nginx/conf.d/codius.conf")
-  dirs_to_remove=("$HOME/.yarn" "/etc/letsencrypt" "/var/lib/hyper" "/run/hyper" "/var/log/hyper")
-
-  for f in "${files_to_remove[@]}"
-  do
-    if [[ -f $f ]]; then
-      ${SUDO} rm -rf $f
-    fi
-  done
-
-  for d in "${dirs_to_remove[@]}"
-  do
-    if [ -d "$d" ]; then
-      ${SUDO} rm -rf $d
-    fi
-  done
-
-
-  if [[ "${INIT_SYSTEM}" == "systemd" ]];then
-      ${SUDO} systemctl daemon-reload
-  fi
+  ${SUDO} /usr/local/bin/k3s-uninstall.sh
 
   printf "\n\n"
   show_message done "[*] Everything cleaned successfully!"
@@ -1080,20 +901,20 @@ do
 
   echo "What do you want to do?"
                   echo "   1) Install and run Codius in your system"
-                  echo "   2) Check your system for Codius errors"
-                  echo "   3) Check for certificate status and renew"
-                  echo "   4) Cleanup the codius from the server"
-                  echo "   5) Update Codiusd & Moneyd to the lastest version"
-                  echo "   6) Exit"
-  read -p "Select an option [1-6]: " option
+                  # echo "   2) Check your system for Codius errors"
+                  # echo "   3) Check for certificate status and renew"
+                  echo "   2) Cleanup the codius from the server"
+                  # echo "   3) Update Codiusd & Moneyd to the lastest version"
+                  echo "   3) Exit"
+  read -p "Select an option [1-3]: " option
 
   case $option in
     1)install;;
-    2)debug;;
-    3)renew;;
-    4)clean;;
-    5)update;;
-    6)exit;;
+    # 2)debug;;
+    # 3)renew;;
+    2)clean;;
+    # 3)update;;
+    3)exit;;
   esac
 done
 
