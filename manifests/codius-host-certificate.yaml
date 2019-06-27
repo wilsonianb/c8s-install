@@ -1,0 +1,21 @@
+apiVersion: certmanager.k8s.io/v1alpha1
+kind: Certificate
+metadata:
+  name: codius-host-certificate
+  namespace: codiusd
+spec:
+  secretName: codiusd-certificate
+  issuerRef:
+    name: issuer-letsencrypt
+    namespace: codiusd
+  commonName: codius.example.com
+  dnsNames:
+  - codius.example.com
+  - "*.codius.example.com"
+  acme:
+    config:
+    - dns01:
+        provider: acmedns
+      domains:
+        - codius.example.com
+        - "*.codius.example.com"

@@ -1,0 +1,19 @@
+apiVersion: certmanager.k8s.io/v1alpha1
+kind: Issuer
+metadata:
+  name: issuer-letsencrypt
+  namespace: codiusd
+spec:
+  acme:
+    server: https://acme-v02.api.letsencrypt.org/directory
+    email: yourname@codius.example.com
+    privateKeySecretRef:
+      name: account-private-key-secret
+    dns01:
+      providers:
+      - name: acmedns
+        acmedns:
+          host: http://acme-dns.acme-dns
+          accountSecretRef:
+            name: certmanager-secret
+            key: acme-dns.json
