@@ -499,14 +499,17 @@ EOF
 
   show_message info "[+] Installing Moneyd... "
 
-  _exec kubectl create namespace moneyd
-  _exec kubectl run moneyd-config -n moneyd --image wilsonianbcoil/moneyd-xrp --generator=run-pod/v1 --restart=Never --command -- sleep 1000
-  _exec kubectl wait --for=condition=Ready --timeout=60s -n moneyd pod/moneyd-config
-  # echo -ne "$SECRET\n" | ${SUDO} $(which moneyd) xrp:configure > /dev/null 2>&1 || { show_message error "${ERR_MONEYD_CONFIGURE[1]}" ; exit "${ERR_MONEYD_CONFIGURE[0]}" ; }
-  kubectl exec moneyd-config -n moneyd -it -- /usr/local/bin/moneyd xrp:configure -t --advanced
-  _exec kubectl create secret generic moneyd-config -n moneyd --from-file=.moneyd.json=<(kubectl exec moneyd-config -n moneyd -- cat /root/.moneyd.test.json)
-  _exec kubectl delete pod moneyd-config -n moneyd
-  _exec kubectl apply -f "${K8S_MANIFEST_PATH}/moneyd.yaml"
+  # _exec kubectl create namespace moneyd
+  # _exec kubectl run moneyd-config -n moneyd --image wilsonianbcoil/moneyd-xrp --generator=run-pod/v1 --restart=Never --command -- sleep 1000
+  # _exec kubectl wait --for=condition=Ready --timeout=60s -n moneyd pod/moneyd-config
+  # # echo -ne "$SECRET\n" | ${SUDO} $(which moneyd) xrp:configure > /dev/null 2>&1 || { show_message error "${ERR_MONEYD_CONFIGURE[1]}" ; exit "${ERR_MONEYD_CONFIGURE[0]}" ; }
+  # kubectl exec moneyd-config -n moneyd -it -- /usr/local/bin/moneyd xrp:configure -t --advanced
+  # _exec kubectl create secret generic moneyd-config -n moneyd --from-file=.moneyd.json=<(kubectl exec moneyd-config -n moneyd -- cat /root/.moneyd.test.json)
+  # _exec kubectl delete pod moneyd-config -n moneyd
+  # _exec kubectl apply -f "${K8S_MANIFEST_PATH}/moneyd.yaml"
+  ${SUDO} ${CURL_C} /tmp/moneyd-local.yaml "${K8S_MANIFEST_PATH}/moneyd-local.yaml" >>"${LOG_OUTPUT}" 2>&1
+  sed -i s/codius.example.com/$HOSTNAME/g /tmp/moneyd-local.yaml
+  _exec kubectl apply -f /tmp/moneyd-local.yaml
   _exec kubectl rollout status deployment -n moneyd moneyd
 
   # ============================================== Moneyd
