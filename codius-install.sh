@@ -125,6 +125,11 @@ function _exec() {
   PID=$! # Set global PGID to process id of the command we just ran. 
   spin_wait "${PID}"
   exec 3>&-
+
+  if ! wait ${PID};then
+    show_message error "An error occurred. See ${LOG_OUTPUT}"
+    exit ${ret}
+  fi
 }
 
 function program_is_installed {
