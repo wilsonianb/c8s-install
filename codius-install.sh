@@ -75,7 +75,7 @@ cat <<"EOF"
     \____\___/ \__,_|_|\__,_|___/ |___|_| |_|___/\__\__,_|_|_|\___|_|   
 
 
-This script will let you setup your own Codius host in no more than two minutes,
+This script will let you setup your own Codius host in minutes,
 even if you haven't used codius before. 
 It has been designed to be as unobtrusive and universal as possible.
 
