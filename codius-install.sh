@@ -460,6 +460,7 @@ EOF
   sed -i '/cluster-resource-namespace/a \          - --dns01-recursive-nameservers=1.1.1.1:53,8.8.8.8:53' /tmp/cert-manager.yaml
   _exec kubectl apply -f /tmp/cert-manager.yaml
   _exec kubectl wait --for=condition=Available -n cert-manager deployment/cert-manager
+  _exec kubectl wait --for=condition=Available -n cert-manager deployment/cert-manager-webhook
 
   # ============================================== cert-manager
 
