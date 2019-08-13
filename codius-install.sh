@@ -43,7 +43,7 @@ CALICO_URL="https://docs.projectcalico.org/v3.8/manifests/calico-policy-only.yam
 ########## Local Path Provisioner ##########
 LOCAL_PATH_PROVISIONER_URL="https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.9/deploy/local-path-storage.yaml"
 ########## Cert-manager ##########
-CERT_MANAGER_URL="https://github.com/jetstack/cert-manager/releases/download/v0.9.1/cert-manager.yaml"
+CERT_MANAGER_URL="https://github.com/jetstack/cert-manager/releases/download/v0.8.1/cert-manager.yaml"
 ########## Constant ##########
 #Color Constant
 RED=`tput setaf 1`
