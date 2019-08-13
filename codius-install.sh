@@ -2,7 +2,7 @@
 # File              : codius-install.sh
 # Author            : N3TC4T <netcat.av@gmail.com>
 # Date              : 16.06.2018
-# Last Modified Date: 07.03.2019
+# Last Modified Date: 13.08.2019
 # Last Modified By  : wilsonianb <brandon@coil.com>
 # Copyright (c) 2018 N3TC4T <netcat.av@gmail.com>
 #
@@ -519,73 +519,6 @@ clean(){
 }
 
 
-################### RENEW ###########################
-renew()
-{
-  show_message info "[*] Checking for certificate status..."
-  new_line
-  new_line
-
-
-  local HOSTNAME=$(hostname)
-
-  local canRenew=false
-  local notBefore=`echo | /usr/bin/openssl s_client -connect ${HOSTNAME}:443 2>/dev/null | openssl x509 -noout -dates | grep notBefore | cut -d'=' -f2`
-  local notAfter=`echo | /usr/bin/openssl s_client -connect ${HOSTNAME}:443 2>/dev/null | openssl x509 -noout -dates | grep notAfter | cut -d'=' -f2`
-
-  local notBeforeUnix=`date --date="${notBefore}" +"%s"`
-  local today=`date`
-  local todayUnix=`date --date="${today}" +"%s"`
-  local eightyfivedays="7344000"
-  local renewDateUnix=$((notBeforeUnix + eightyfivedays))
-  local renewDate=`date -d @$renewDateUnix`
-
-  if [ $renewDateUnix -gt $todayUnix  ]; then
-     show_message success "You still have time. \nToday is ${today}. \nWaiting until ${renewDate} to renew. \n${notAfter} is when your SSL certificate expires."
-     new_line
-     exit 0
-  else
-    show_message warn "Time to renew your certificate. Today is ${today} and your certificate expires ${notAfter}."
-  fi
-
-
-  #check for certbot command
-  CERTBOT=$(which certbot-auto certbot|head -n1)
-  if [ -z "$CERTBOT" ]; then
-    show_message error "${ERR_NO_CERTBOT_INSTALLED[1]}" && exit ${ERR_NO_CERTBOT_INSTALLED[0]}
-  fi
-
-  # ask if user wants to renew
-  read -p "Do you want to renew? [y/N]: " -e RENEW
-
-  if [[ "$RENEW" = 'y' || "$RENEW" = 'Y' ]]; then
-    new_line
-    show_message warn "If the challenge TXT dosn't exist in your DNS please create them. \nAnd Please don't forget to wait some time after creating records!"
-    read -n1 -r -p "Press any key to continue ..."
-
-    ${SUDO} ${CERTBOT} certonly --manual -d "${HOSTNAME}" -d "*.${HOSTNAME}" --agree-tos  --preferred-challenges dns-01  --server https://acme-v02.api.letsencrypt.org/directory
-
-    show_message info "[!] Regenerating SSL file. It takes a while, don't panic."
-    _exec openssl dhparam -out /etc/nginx/dhparam.pem 2048
-
-    show_message info "[*] Restarting Nginx... "
-
-    if [[ "${INIT_SYSTEM}" == "systemd" ]];then
-      _exec "systemctl restart nginx"
-    else
-      _exec "service nginx restart"
-    fi
-
-    show_message done "[*] Everything done!"
-    new_line
-  fi
-
-  exit 0
-
-
-}
-
-
 ################### DEBUG ###########################
 debug(){
 
@@ -765,7 +698,6 @@ do
   echo "What do you want to do?"
                   echo "   1) Install and run Codius in your system"
                   # echo "   2) Check your system for Codius errors"
-                  # echo "   3) Check for certificate status and renew"
                   echo "   2) Cleanup the codius from the server"
                   echo "   3) Update Codius host components to the latest versions"
                   echo "   4) Exit"
@@ -774,7 +706,6 @@ do
   case $option in
     1)install;;
     # 2)debug;;
-    # 3)renew;;
     2)clean;;
     3)update;;
     4)exit;;
