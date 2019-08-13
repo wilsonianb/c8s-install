@@ -29,7 +29,7 @@ set -e
 ########## Variable ##########
 SUDO=""
 BASH_C="bash -c"
-SLEEP_SEC=10
+CURL_C="curl -SL -o"
 LOG_OUTPUT="/tmp/${0##*/}$(date +%Y-%m-%d.%H-%M)"
 CURRENT_USER="$(id -un 2>/dev/null || true)"
 BASE_DIR=$(cd "$(dirname "$0")"; pwd); cd ${BASE_DIR}
@@ -38,11 +38,6 @@ K8S_MANIFEST_PATH="https://raw.githubusercontent.com/wilsonianb/codius-install/k
 ########## k3s ##########
 K3S_URL="https://get.k3s.io"
 ########## Constant ##########
-SUPPORT_DISTRO=(debian ubuntu fedora centos)
-UBUNTU_CODE=(trusty utopic vivid wily xenial)
-DEBIAN_CODE=(jessie wheezy)
-CENTOS_VER=(6 7)
-FEDORA_VER=(20 21 22 23 24 25)
 #Color Constant
 RED=`tput setaf 1`
 GREEN=`tput setaf 2`
@@ -53,13 +48,8 @@ LIGHT=`tput bold `
 RESET=`tput sgr0`
 #Error Message#Error Message
 ERR_ROOT_PRIVILEGE_REQUIRED=(10 "This install script need root privilege, please retry use 'sudo' or root user!")
-ERR_NOT_SUPPORT_PLATFORM=(20 "Sorry, Hyperd only support x86_64 platform!")
-ERR_NOT_SUPPORT_DISTRO=(21 "Sorry, The installer only support centos/ubuntu/debian/fedora now.")
-ERR_NOT_PUBLIC_IP=(11 "You need an public IP to run Codius!")
-ERR_MONEYD_CONFIGURE=(12 "There is an error on configuring moneyd , please check you entered correct secret and your account have at least 36 XRP. If you meet these requirements, please restart the script and try again.")
-ERR_NOT_SUPPORT_DISTRO_VERSION=(22)
-ERR_SCRIPT_NO_NEW_VERSION=(80 "You are using the newest codius installer\n")
-ERR_NO_CERTBOT_INSTALLED=(81 "Certbot is not installed!\n")
+ERR_NOT_PUBLIC_IP=(11 "You need a public IP to run Codius!")
+ERR_MONEYD_CONFIGURE=(12 "There is an error on configuring moneyd, please check you entered correct secret and your account have at least 36 XRP. If you meet these requirements, please restart the script and try again.")
 ERR_UNKNOWN_MSG_TYPE=98
 ERR_UNKNOWN=99
 # Helpers ==============================================
@@ -176,98 +166,6 @@ command_exist() {
   type "$@" > /dev/null 2>&1
 }
 
-
-get_curl() {
-  CURL_C=""; USE_WGET="false"
-  if (command_exist curl);then
-    CURL_C='curl -SL -o '
-  elif (command_exist wget);then
-    USE_WGET="true"
-    CURL_C='wget -O '
-  fi
-
-  echo "${USE_WGET}|${CURL_C}"
-}
-
-check_os_platform() {
-  ARCH="$(uname -m)"
-  if [[ "${ARCH}" != "x86_64" ]];then
-    show_message error "${ERR_NOT_SUPPORT_PLATFORM[1]}" && exit ${ERR_NOT_SUPPORT_PLATFORM[0]}
-  fi
-}
-check_deps_initsystem() {
-  if [[ "${LSB_DISTRO}" == "ubuntu" ]] && [[ "${LSB_CODE}" == "utopic" ]];then
-    INIT_SYSTEM="sysvinit"
-  elif (command_exist systemctl);then
-    INIT_SYSTEM="systemd"
-  else
-    INIT_SYSTEM="sysvinit"
-  fi
-}
-
-check_os_distro() {
-  LSB_DISTRO=""; LSB_VER=""; LSB_CODE=""
-  if (command_exist lsb_release);then
-    LSB_DISTRO="$(lsb_release -si)"
-    LSB_VER="$(lsb_release -sr)"
-    LSB_CODE="$(lsb_release -sc)"
-  fi
-  if [[ -z "${LSB_DISTRO}" ]];then
-    if [[ -r /etc/lsb-release ]];then
-      LSB_DISTRO="$(. /etc/lsb-release && echo "${DISTRIB_ID}")"
-      LSB_VER="$(. /etc/lsb-release && echo "${DISTRIB_RELEASE}")"
-      LSB_CODE="$(. /etc/lsb-release && echo "${DISTRIB_CODENAME}")"
-    elif [[ -r /etc/os-release ]];then
-      LSB_DISTRO="$(. /etc/os-release && echo "$ID")"
-      LSB_VER="$(. /etc/os-release && echo "$VERSION_ID")"
-    elif [[ -r /etc/fedora-release ]];then
-      LSB_DISTRO="fedora"
-    elif [[ -r /etc/debian_version ]];then
-      LSB_DISTRO="Debian"
-      LSB_VER="$(cat /etc/debian_version)"
-    elif [[ -r /etc/centos-release ]];then
-      LSB_DISTRO="CentOS"
-      LSB_VER="$(cat /etc/centos-release | cut -d' ' -f3)"
-    fi
-  fi
-  LSB_DISTRO=$(echo "${LSB_DISTRO}" | tr '[:upper:]' '[:lower:]')
-  if [[ "${LSB_DISTRO}" == "debian" ]];then
-    case ${LSB_VER} in
-      8) LSB_CODE="jessie";;
-      7) LSB_CODE="wheezy";;
-    esac
-  fi
-
-  case "${LSB_DISTRO}" in
-    ubuntu|debian)
-      if [[ "${LSB_DISTRO}" == "ubuntu" ]]
-      then SUPPORT_CODE_LIST="${UBUNTU_CODE[@]}";
-      else SUPPORT_CODE_LIST="${DEBIAN_CODE[@]}";
-      fi
-      if (echo "${SUPPORT_CODE_LIST}" | grep -vqw "${LSB_CODE}");then
-        show_message error "Hyper support ${LSB_DISTRO}( ${SUPPORT_CODE_LIST} ), but current is ${LSB_CODE}(${LSB_VER})"
-        exit ${ERR_NOT_SUPPORT_DISTRO_VERSION[0]}
-      fi
-    ;;
-    centos|fedora)
-      CMAJOR=$( echo ${LSB_VER} | cut -d"." -f1 )
-      if [[  "${LSB_DISTRO}" == "centos" ]]
-      then SUPPORT_VER_LIST="${CENTOS_VER[@]}";
-      else SUPPORT_VER_LIST="${FEDORA_VER[@]}";
-      fi
-      if (echo "${SUPPORT_VER_LIST}" | grep -qvw "${CMAJOR}");then
-        show_message error "Hyper support ${LSB_DISTRO}( ${SUPPORT_VER_LIST} ), but current is ${LSB_VER}"
-        exit ${ERR_NOT_SUPPORT_DISTRO_VERSION[0]}
-      fi
-    ;;
-    *) if [[ ! -z ${LSB_DISTRO} ]];then echo -e -n "\nCurrent OS is '${LSB_DISTRO} ${LSB_VER}(${LSB_CODE})'";
-       else echo -e -n "\nCan not detect OS type"; fi
-      show_message error "${ERR_NOT_SUPPORT_DISTRO[1]}"
-      exit ${ERR_NOT_SUPPORT_DISTRO[0]}
-    ;;
-  esac
-}
-
 check_user() {
   if [[ "${CURRENT_USER}" != "root" ]];then
     if (command_exist sudo);then
@@ -289,9 +187,6 @@ check_user() {
 install()
 {
 
-  local USE_WGET=$( echo $(get_curl) | awk -F"|" '{print $1}' )
-  local CURL_C=$( echo $(get_curl) | awk -F"|" '{print $2}' )
-
   new_line
   show_message info "[-] I need to ask you a few questions before starting the setup."
   show_message info "[-] You can leave the default options and just press enter if you are ok with them."
@@ -300,11 +195,6 @@ install()
 
   # checks for script
   check_user
-  check_os_platform
-  check_os_distro
-  check_deps_initsystem
-
-
 
   # Server Ip Address
   echo "[+] First, provide the IPv4 address of the network interface"
@@ -456,7 +346,7 @@ EOF
 
   show_message info "[+] Installing cert-manager... "
 
-  ${SUDO} ${CURL_C} /tmp/cert-manager.yaml https://github.com/jetstack/cert-manager/releases/download/v0.8.0/cert-manager.yaml >>"${LOG_OUTPUT}" 2>&1
+  ${SUDO} ${CURL_C} /tmp/cert-manager.yaml https://github.com/jetstack/cert-manager/releases/download/v0.8.1/cert-manager.yaml >>"${LOG_OUTPUT}" 2>&1
   sed -i '/cluster-resource-namespace/a \          - --dns01-recursive-nameservers=1.1.1.1:53,8.8.8.8:53' /tmp/cert-manager.yaml
   _exec kubectl apply -f /tmp/cert-manager.yaml
   _exec kubectl wait --for=condition=Available -n cert-manager deployment/cert-manager
@@ -493,6 +383,7 @@ EOF
   ${SUDO} ${CURL_C} /tmp/codius-host-issuer.yaml "${K8S_MANIFEST_PATH}/codius-host-issuer.yaml" >>"${LOG_OUTPUT}" 2>&1
   sed -i s/yourname@codius.example.com/$EMAIL/g /tmp/codius-host-issuer.yaml
   _exec kubectl apply -f /tmp/codius-host-issuer.yaml
+  _exec kubectl wait --for=condition=Ready --timeout=60s -n codiusd issuer/issuer-letsencrypt
 
   ${SUDO} ${CURL_C} /tmp/codius-host-certificate.yaml "${K8S_MANIFEST_PATH}/codius-host-certificate.yaml" >>"${LOG_OUTPUT}" 2>&1
   sed -i s/codius.example.com/$HOSTNAME/g /tmp/codius-host-certificate.yaml
@@ -550,7 +441,6 @@ EOF
 
 update()
 {
-  check_deps_initsystem
   check_user
   # We need to check if Moneyd installed with NPM or Yarn
 
@@ -638,9 +528,6 @@ update()
 clean(){
 
   check_user
-  check_os_platform
-  check_os_distro
-  check_deps_initsystem
 
   show_message warn "This action will remove packages listed below and all configuration files belonging to them:
   \n* k3s\n* Kata Containers\n* Codiusd\n* Moneyd"
@@ -733,7 +620,6 @@ renew()
 
 ################### DEBUG ###########################
 debug(){
-  check_deps_initsystem
 
   # active debug for commands
   export DEBUG=*
