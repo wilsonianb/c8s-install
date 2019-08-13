@@ -36,7 +36,14 @@ BASE_DIR=$(cd "$(dirname "$0")"; pwd); cd ${BASE_DIR}
 INSTALLER_URL="https://raw.githubusercontent.com/wilsonianb/codius-install/k8s/codius-install.sh"
 K8S_MANIFEST_PATH="https://raw.githubusercontent.com/wilsonianb/codius-install/k8s/manifests"
 ########## k3s ##########
-K3S_URL="https://get.k3s.io"
+K3S_URL="https://raw.githubusercontent.com/rancher/k3s/v0.8.0/install.sh"
+K3S_VERSION=`echo "$K3S_URL" | grep -Po 'v\d+.\d+.\d+'`
+########## Calico ##########
+CALICO_URL="https://docs.projectcalico.org/v3.8/manifests/calico-policy-only.yaml"
+########## Local Path Provisioner ##########
+LOCAL_PATH_PROVISIONER_URL="https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.9/deploy/local-path-storage.yaml"
+########## Cert-manager ##########
+CERT_MANAGER_URL="https://github.com/jetstack/cert-manager/releases/download/v0.9.1/cert-manager.yaml"
 ########## Constant ##########
 #Color Constant
 RED=`tput setaf 1`
@@ -178,6 +185,68 @@ check_user() {
   fi
 }
 
+install_update_k3s() {
+  ${SUDO} ${CURL_C} /tmp/k3s-install.sh ${K3S_URL} >>"${LOG_OUTPUT}" 2>&1 && ${SUDO} chmod a+x /tmp/k3s-install.sh
+
+  local INSTALL_K3S_VERSION="${K3S_VERSION}"
+  _exec bash /tmp/k3s-install.sh --cluster-cidr=192.168.0.0/16
+  sleep 10
+  _exec kubectl wait --for=condition=Available -n kube-system deployment/coredns
+  _exec kubectl wait --for=condition=complete --timeout=300s -n kube-system job/helm-install-traefik
+  _exec kubectl wait --for=condition=Available -n kube-system deployment/traefik
+}
+
+install_update_kata() {
+  _exec kubectl apply -f https://raw.githubusercontent.com/kata-containers/packaging/master/kata-deploy/kata-rbac.yaml
+  # ${SUDO} ${CURL_C} /tmp/kata-deploy.yaml https://raw.githubusercontent.com/kata-containers/packaging/master/kata-deploy/kata-deploy.yaml >>"${LOG_OUTPUT}" 2>&1
+  # sed -i s/katadocker/wilsonianbcoil/g /tmp/kata-deploy.yaml
+  # _exec kubectl apply -f /tmp/kata-deploy.yaml
+  _exec kubectl apply -f "${K8S_MANIFEST_PATH}/kata-deploy.yaml"
+  _exec kubectl rollout status ds -n kube-system kata-deploy
+  _exec kubectl apply -f https://raw.githubusercontent.com/kata-containers/packaging/master/kata-deploy/k8s-1.14/kata-qemu-runtimeClass.yaml
+}
+
+install_update_calico() {
+  _exec kubectl apply -f $CALICO_URL
+  _exec kubectl rollout status ds -n kube-system calico-node
+}
+
+install_update_local_storage() {
+  _exec kubectl apply -f $LOCAL_PATH_PROVISIONER_URL
+  _exec kubectl rollout status deployment -n local-path-storage local-path-provisioner
+}
+
+install_update_ingress_nginx() {
+  _exec kubectl apply -f "${K8S_MANIFEST_PATH}/ingress-nginx.yaml"
+  # _exec kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/master/deploy/static/provider/baremetal/service-nodeport.yaml
+  _exec kubectl wait --for=condition=Available --timeout=60s -n ingress-nginx deployment/nginx-ingress-controller
+}
+
+install_update_acme_dns() {
+  _exec kubectl apply -f "${K8S_MANIFEST_PATH}/acme-dns.yaml"
+  _exec kubectl wait --for=condition=Available --timeout=60s -n acme-dns deployment/acme-dns
+}
+
+install_update_cert_manager() {
+  ${SUDO} ${CURL_C} /tmp/cert-manager.yaml $CERT_MANAGER_URL >>"${LOG_OUTPUT}" 2>&1
+  sed -i '/cluster-resource-namespace/a \          - --dns01-recursive-nameservers=1.1.1.1:53,8.8.8.8:53' /tmp/cert-manager.yaml
+  _exec kubectl apply -f /tmp/cert-manager.yaml
+  _exec kubectl wait --for=condition=Available -n cert-manager deployment/cert-manager
+  _exec kubectl wait --for=condition=Available -n cert-manager deployment/cert-manager-webhook
+}
+
+install_update_moneyd() {
+  # _exec kubectl apply -f "${K8S_MANIFEST_PATH}/moneyd.yaml"
+  _exec kubectl apply -f "${K8S_MANIFEST_PATH}/moneyd-local.yaml"
+  _exec kubectl rollout status deployment -n moneyd moneyd
+}
+
+install_update_codiusd() {
+  ${SUDO} ${CURL_C} /tmp/codiusd.yaml "${K8S_MANIFEST_PATH}/codiusd.yaml" >>"${LOG_OUTPUT}" 2>&1
+  sed -i s/codius.example.com/$HOSTNAME/g /tmp/codiusd.yaml
+  _exec kubectl apply -f /tmp/codiusd.yaml
+  _exec kubectl rollout status deployment -n codiusd codiusd
+}
 
 # ============================================== Helpers
 
@@ -272,61 +341,22 @@ EOF
 
   # ============================================== Subdomain DNS
 
-  # k3s ==============================================
+  # Kubernetes ==============================================
 
   show_message info "[+] Installing k3s... "
-
-  ${SUDO} ${CURL_C} /tmp/k3s-install.sh ${K3S_URL} >>"${LOG_OUTPUT}" 2>&1 && ${SUDO} chmod a+x /tmp/k3s-install.sh
-
-  _exec bash /tmp/k3s-install.sh --cluster-cidr=192.168.0.0/16
-  sleep 10
-  _exec kubectl wait --for=condition=Available -n kube-system deployment/coredns
-  _exec kubectl wait --for=condition=complete --timeout=300s -n kube-system job/helm-install-traefik
-  _exec kubectl wait --for=condition=Available -n kube-system deployment/traefik
-
-  # ============================================== k3s
-
-  # Kata Containers ==============================================
+  install_update_k3s
 
   show_message info "[+] Installing Kata Containers... "
-
-  _exec kubectl apply -f https://raw.githubusercontent.com/kata-containers/packaging/master/kata-deploy/kata-rbac.yaml
-  # ${SUDO} ${CURL_C} /tmp/kata-deploy.yaml https://raw.githubusercontent.com/kata-containers/packaging/master/kata-deploy/kata-deploy.yaml >>"${LOG_OUTPUT}" 2>&1
-  # sed -i s/katadocker/wilsonianbcoil/g /tmp/kata-deploy.yaml
-  # _exec kubectl apply -f /tmp/kata-deploy.yaml
-  _exec kubectl apply -f "${K8S_MANIFEST_PATH}/kata-deploy.yaml"
-  _exec kubectl rollout status ds -n kube-system kata-deploy
-  _exec kubectl apply -f https://raw.githubusercontent.com/kata-containers/packaging/master/kata-deploy/k8s-1.14/kata-qemu-runtimeClass.yaml
-
-  # ============================================== Kata Containers
-
-  # Calico ==============================================
+  install_update_kata
 
   show_message info "[+] Installing Calico policy enforcement... "
-
-  _exec kubectl apply -f https://docs.projectcalico.org/v3.7/manifests/calico-policy-only.yaml
-  _exec kubectl rollout status ds -n kube-system calico-node
-
-  # ============================================== Calico
-
-  # Local storage ==============================================
+  install_update_calico
 
   show_message info "[+] Installing Local path storage... "
-
-  _exec kubectl apply -f https://raw.githubusercontent.com/rancher/local-path-provisioner/master/deploy/local-path-storage.yaml
-  _exec kubectl rollout status deployment -n local-path-storage local-path-provisioner
-
-  # ============================================== Local storage
-
-  # Ingress nginx ==============================================
+  install_update_local_storage
 
   show_message info "[+] Installing NGINX Ingress Controller... "
-
-  _exec kubectl apply -f "${K8S_MANIFEST_PATH}/ingress-nginx.yaml"
-
-  # ============================================== Ingress nginx
-
-  # acme-dns ==============================================
+  install_update_ingress_nginx
 
   show_message info "[+] Installing acme-dns... "
 
@@ -337,22 +367,12 @@ EOF
 
   _exec kubectl create namespace acme-dns
   _exec kubectl create configmap acme-dns-config --namespace=acme-dns --from-file=/tmp/config.cfg
-  _exec kubectl apply -f "${K8S_MANIFEST_PATH}/acme-dns.yaml"
-  _exec kubectl wait --for=condition=Available --timeout=60s -n acme-dns deployment/acme-dns
-
-  # ============================================== acme-dns
-
-  # cert-manager ==============================================
+  install_update_acme_dns
 
   show_message info "[+] Installing cert-manager... "
+  install_update_cert_manager
 
-  ${SUDO} ${CURL_C} /tmp/cert-manager.yaml https://github.com/jetstack/cert-manager/releases/download/v0.8.1/cert-manager.yaml >>"${LOG_OUTPUT}" 2>&1
-  sed -i '/cluster-resource-namespace/a \          - --dns01-recursive-nameservers=1.1.1.1:53,8.8.8.8:53' /tmp/cert-manager.yaml
-  _exec kubectl apply -f /tmp/cert-manager.yaml
-  _exec kubectl wait --for=condition=Available -n cert-manager deployment/cert-manager
-  _exec kubectl wait --for=condition=Available -n cert-manager deployment/cert-manager-webhook
-
-  # ============================================== cert-manager
+  # ============================================== Kubernetes
 
   # Certificate ==============================================
   show_message info "[+] Generating certificate for ${HOSTNAME}"
@@ -403,22 +423,14 @@ EOF
   # kubectl exec moneyd-config -n moneyd -it -- /usr/local/bin/moneyd xrp:configure -t --advanced
   # _exec kubectl create secret generic moneyd-config -n moneyd --from-file=.moneyd.json=<(kubectl exec moneyd-config -n moneyd -- cat /root/.moneyd.test.json)
   # _exec kubectl delete pod moneyd-config -n moneyd
-  # _exec kubectl apply -f "${K8S_MANIFEST_PATH}/moneyd.yaml"
-  ${SUDO} ${CURL_C} /tmp/moneyd-local.yaml "${K8S_MANIFEST_PATH}/moneyd-local.yaml" >>"${LOG_OUTPUT}" 2>&1
-  sed -i s/codius.example.com/$HOSTNAME/g /tmp/moneyd-local.yaml
-  _exec kubectl apply -f /tmp/moneyd-local.yaml
-  _exec kubectl rollout status deployment -n moneyd moneyd
+  install_update_moneyd
 
   # ============================================== Moneyd
 
   # Codiusd =============================================
 
   show_message info "[+] Installing Codiusd... "
-
-  ${SUDO} ${CURL_C} /tmp/codiusd.yaml "${K8S_MANIFEST_PATH}/codiusd.yaml" >>"${LOG_OUTPUT}" 2>&1
-  sed -i s/codius.example.com/$HOSTNAME/g /tmp/codiusd.yaml
-  _exec kubectl apply -f /tmp/codiusd.yaml
-  _exec kubectl rollout status deployment -n codiusd codiusd
+  install_update_codiusd
 
   # ============================================= Codiusd
 
@@ -442,78 +454,34 @@ EOF
 update()
 {
   check_user
-  # We need to check if Moneyd installed with NPM or Yarn
 
-  local PACKAGES=(moneyd codiusd moneyd-uplink-xrp)
-  local PACKAGE_MANAGER=
+  show_message info "[+] Updating k3s... "
+  install_update_k3s
 
-  show_message info "[-] Checking packages availability..."
-  for package in "${PACKAGES[@]}"
-  do
-    local FOUND_IN_YARN=0
-    local FOUND_IN_NPM=0
-    # check if Moneyd installed with NPM
-    npm list --depth 0 --global "$package" > /dev/null 2>&1 && { local FOUND_IN_NPM=1; }
-    # check in Yarn
-    yarn global list --depth=0 2>&1 | grep -q "$package" && { local FOUND_IN_YARN=1; }
+  show_message info "[+] Updating Kata Containers... "
+  install_update_kata
 
-    if [ $FOUND_IN_YARN == 0 ] && [ $FOUND_IN_NPM == 0 ]; then
-      show_message error "$package is not installed with YARN or NPM !"
-      PACKAGES=( "${PACKAGES[@]/$package}" )
-    fi
+  show_message info "[+] Updating Calico policy enforcement... "
+  install_update_calico
 
-    if ! [[ "$PACKAGE_MANAGER" ]]; then
-      if [ $FOUND_IN_YARN == 1 ]; then
-        PACKAGE_MANAGER='yarn'
-      elif [ $FOUND_IN_NPM == 1 ]; then
-        PACKAGE_MANAGER='npm'
-      fi
-    fi
+  show_message info "[+] Updating Local path storage... "
+  install_update_local_storage
 
+  show_message info "[+] Updating NGINX Ingress Controller... "
+  install_update_ingress_nginx
 
-  done
+  show_message info "[+] Updating acme-dns... "
+  install_update_acme_dns
 
-  if [ -z "$PACKAGES" ]; then
-    show_message error "No package to update!" && exit 0
-  fi
+  show_message info "[+] Updating cert-manager... "
+  install_update_cert_manager
 
-  if [ "$PACKAGE_MANAGER" == "npm" ]; then
-    new_line
-    show_message debug "Checking $(echo "${PACKAGES[@]}") version using NPM ..."
-    for package in ${PACKAGES[@]}
-    do
-      output=$(npm -g outdated --parseable --depth=0 | grep "$package" || :)
-      if [[ $output ]] ; then
-        local from_version=$( echo $output | cut -d: -f3)
-        local to_version=$( echo $output | cut -d: -f2)
-        show_message info "[+] Updating ${package} from ${from_version} to ${to_version}... "
-        _exec npm update -g $package --unsafe-perm
-      else
-        show_message info "[+] ${package} already installed latest version."
-      fi
-    done
-  else
-    show_message debug "Updating $(echo "${PACKAGES[@]}") using YARN ..."
-    new_line
-    show_message info "[!] please press SPACE on your keyboard to activate the packages needed to upgrade."
-    new_line
-    ${SUDO} yarn global add moneyd@latest codiusd@latest moneyd-uplink-xrp@latest --force
-  fi
+  show_message info "[+] Updating Moneyd... "
+  install_update_moneyd
 
-  printf "\n\n"
-  read -p "[?] Restarting Moneyd and Codiusd services? [y/N]: " -e RESTART_SERVICE
+  show_message info "[+] Updating Codiusd... "
+  install_update_codiusd
 
-  if [[ "$RESTART_SERVICE" = 'y' || "$RESTART_SERVICE" = 'Y' ]]; then
-      for service in moneyd-xrp codiusd
-      do
-        show_message info "[-] Restarting ${service} ..."
-        if [[ "${INIT_SYSTEM}" == "systemd" ]];then
-          ${SUDO} systemctl restart $service
-        else
-          ${SUDO} service $service restart
-        fi
-      done
-  fi
   printf "\n\n"
   show_message done "[!] Everything done!"
 
@@ -799,17 +767,17 @@ do
                   # echo "   2) Check your system for Codius errors"
                   # echo "   3) Check for certificate status and renew"
                   echo "   2) Cleanup the codius from the server"
-                  # echo "   3) Update Codiusd & Moneyd to the lastest version"
-                  echo "   3) Exit"
-  read -p "Select an option [1-3]: " option
+                  echo "   3) Update Codius host components to the latest versions"
+                  echo "   4) Exit"
+  read -p "Select an option [1-4]: " option
 
   case $option in
     1)install;;
     # 2)debug;;
     # 3)renew;;
     2)clean;;
-    # 3)update;;
-    3)exit;;
+    3)update;;
+    4)exit;;
   esac
 done
 
