@@ -2,7 +2,7 @@
 # File              : codius-install.sh
 # Author            : N3TC4T <netcat.av@gmail.com>
 # Date              : 16.06.2018
-# Last Modified Date: 13.08.2019
+# Last Modified Date: 20.08.2019
 # Last Modified By  : wilsonianb <brandon@coil.com>
 # Copyright (c) 2018 N3TC4T <netcat.av@gmail.com>
 #
@@ -36,7 +36,7 @@ BASE_DIR=$(cd "$(dirname "$0")"; pwd); cd ${BASE_DIR}
 INSTALLER_URL="https://raw.githubusercontent.com/wilsonianb/codius-install/k8s/codius-install.sh"
 K8S_MANIFEST_PATH="https://raw.githubusercontent.com/wilsonianb/codius-install/k8s/manifests"
 ########## k3s ##########
-K3S_URL="https://raw.githubusercontent.com/rancher/k3s/v0.8.0/install.sh"
+K3S_URL="https://raw.githubusercontent.com/rancher/k3s/v0.8.1/install.sh"
 K3S_VERSION=`echo "$K3S_URL" | grep -Po 'v\d+.\d+.\d+'`
 ########## Calico ##########
 CALICO_URL="https://docs.projectcalico.org/v3.8/manifests/calico-policy-only.yaml"
