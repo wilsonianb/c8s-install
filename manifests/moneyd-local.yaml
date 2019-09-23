@@ -9,10 +9,9 @@ metadata:
   name: moneyd
   namespace: moneyd
 spec:
-  type: NodePort
+  type: LoadBalancer
   selector:
     app: moneyd
-  nodePort: 7768
   ports:
   - protocol: TCP
     port: 7768
