@@ -2,7 +2,7 @@
 # File              : codius-install.sh
 # Author            : N3TC4T <netcat.av@gmail.com>
 # Date              : 16.06.2018
-# Last Modified Date: 20.08.2019
+# Last Modified Date: 23.09.2019
 # Last Modified By  : wilsonianb <brandon@coil.com>
 # Copyright (c) 2018 N3TC4T <netcat.av@gmail.com>
 #
@@ -216,12 +216,6 @@ install_update_local_storage() {
   _exec kubectl rollout status deployment -n local-path-storage local-path-provisioner
 }
 
-install_update_ingress_nginx() {
-  _exec kubectl apply -f "${K8S_MANIFEST_PATH}/ingress-nginx.yaml"
-  # _exec kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/master/deploy/static/provider/baremetal/service-nodeport.yaml
-  _exec kubectl wait --for=condition=Available --timeout=60s -n ingress-nginx deployment/nginx-ingress-controller
-}
-
 install_update_acme_dns() {
   _exec kubectl apply -f "${K8S_MANIFEST_PATH}/acme-dns.yaml"
   _exec kubectl wait --for=condition=Available --timeout=60s -n acme-dns deployment/acme-dns
@@ -355,14 +349,12 @@ EOF
   show_message info "[+] Installing Local path storage... "
   install_update_local_storage
 
-  show_message info "[+] Installing NGINX Ingress Controller... "
-  install_update_ingress_nginx
-
   show_message info "[+] Installing acme-dns... "
 
   ${SUDO} ${CURL_C} /tmp/config.cfg https://raw.githubusercontent.com/joohoi/acme-dns/master/config.cfg >>"${LOG_OUTPUT}" 2>&1
   sed -i s/auth.example.org/acme.$HOSTNAME/g /tmp/config.cfg
   sed -i s/127.0.0.1/0.0.0.0/g /tmp/config.cfg
+  sed -i 's/= "both"/= "udp"/g' /tmp/config.cfg
   sed -i s/198.51.100.1/`ifconfig $(route -n | grep ^0.0.0.0 | awk '{print $NF}') | grep inet | grep -v inet6 | awk '{print $2}'`/g /tmp/config.cfg
 
   _exec kubectl create namespace acme-dns
@@ -466,9 +458,6 @@ update()
 
   show_message info "[+] Updating Local path storage... "
   install_update_local_storage
-
-  show_message info "[+] Updating NGINX Ingress Controller... "
-  install_update_ingress_nginx
 
   show_message info "[+] Updating acme-dns... "
   install_update_acme_dns
