@@ -36,14 +36,14 @@ BASE_DIR=$(cd "$(dirname "$0")"; pwd); cd ${BASE_DIR}
 INSTALLER_URL="https://raw.githubusercontent.com/wilsonianb/codius-install/k8s/codius-install.sh"
 K8S_MANIFEST_PATH="https://raw.githubusercontent.com/wilsonianb/codius-install/k8s/manifests"
 ########## k3s ##########
-K3S_URL="https://raw.githubusercontent.com/rancher/k3s/v0.8.1/install.sh"
+K3S_URL="https://raw.githubusercontent.com/rancher/k3s/v0.9.0/install.sh"
 K3S_VERSION=`echo "$K3S_URL" | grep -Po 'v\d+.\d+.\d+'`
 ########## Calico ##########
-CALICO_URL="https://docs.projectcalico.org/v3.8/manifests/calico-policy-only.yaml"
+CALICO_URL="https://docs.projectcalico.org/v3.9/manifests/calico-policy-only.yaml"
 ########## Local Path Provisioner ##########
 LOCAL_PATH_PROVISIONER_URL="https://raw.githubusercontent.com/rancher/local-path-provisioner/v0.0.9/deploy/local-path-storage.yaml"
 ########## Cert-manager ##########
-CERT_MANAGER_URL="https://github.com/jetstack/cert-manager/releases/download/v0.8.1/cert-manager.yaml"
+CERT_MANAGER_URL="https://github.com/jetstack/cert-manager/releases/download/v0.10.0/cert-manager.yaml"
 ########## Constant ##########
 #Color Constant
 RED=`tput setaf 1`
