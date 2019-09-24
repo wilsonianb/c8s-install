@@ -1,16 +1,9 @@
-## codius-install
-Codius (https://codius.org/) installer for CentOS, Ubuntu, Debian ...
+## c8s-install
+[Codiusless](https://codius.org/) (c8s) installer for CentOS, Ubuntu, Debian ...
 
-This script will let you setup your own codius peer in minutes, even if you haven't used codius before. It has been designed to be as unobtrusive and universal as possible.
+This script will let you setup your own c8s host in minutes, even if you haven't used c8s before. It has been designed to be as unobtrusive and universal as possible.
 
 ### Installation
 Run the script and follow the assistant:
 
-`wget https://raw.githubusercontent.com/wilsonianb/codius-install/k8s/codius-install.sh -O codius-install.sh && bash codius-install.sh`
-### ScreenShot
-![screen](https://user-images.githubusercontent.com/6250203/41824308-780a9170-7823-11e8-8611-642b84895ccb.png)
-
-### Contact
-
-[<img src="https://user-images.githubusercontent.com/6250203/42041517-5435904c-7b07-11e8-906b-39a5f763a406.png" data-canonical-src="https://twitter.com/baltazar223" width="80" height="80" />
-](https://twitter.com/baltazar223) 
+`wget https://raw.githubusercontent.com/wilsonianb/codius-install/c8s/c8s-install.sh -O c8s-install.sh && bash c8s-install.sh`

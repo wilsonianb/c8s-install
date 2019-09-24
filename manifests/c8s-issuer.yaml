@@ -2,11 +2,11 @@ apiVersion: certmanager.k8s.io/v1alpha1
 kind: Issuer
 metadata:
   name: issuer-letsencrypt
-  namespace: codiusd
+  namespace: gloo-system
 spec:
   acme:
     server: https://acme-v02.api.letsencrypt.org/directory
-    email: yourname@codius.example.com
+    email: yourname@c8s.example.com
     privateKeySecretRef:
       name: account-private-key-secret
     dns01:

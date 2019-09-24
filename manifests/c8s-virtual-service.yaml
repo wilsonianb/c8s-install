@@ -1,0 +1,27 @@
+apiVersion: gateway.solo.io/v1
+kind: VirtualService
+metadata:
+  name: c8s
+  namespace: gloo-system
+spec:
+  sslConfig:
+    secretRef:
+      name: c8s-certificate
+      namespace: gloo-system
+  virtualHost:
+    domains:
+    - c8s.example.com
+    - '*.c8s.example.com'
+    routes:
+    - matcher:
+        regex: .*
+      routeAction:
+        single:
+          upstream:
+            name: c8s-service
+            namespace: gloo-system
+      routePlugins:
+        retries:
+          numRetries: 3
+          perTryTimeout: 600s
+        timeout: 600s

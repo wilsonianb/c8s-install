@@ -33,11 +33,13 @@ CURL_C="curl -SL -o"
 LOG_OUTPUT="/tmp/${0##*/}$(date +%Y-%m-%d.%H-%M)"
 CURRENT_USER="$(id -un 2>/dev/null || true)"
 BASE_DIR=$(cd "$(dirname "$0")"; pwd); cd ${BASE_DIR}
-INSTALLER_URL="https://raw.githubusercontent.com/wilsonianb/codius-install/k8s/codius-install.sh"
-K8S_MANIFEST_PATH="https://raw.githubusercontent.com/wilsonianb/codius-install/k8s/manifests"
+INSTALLER_URL="https://raw.githubusercontent.com/wilsonianb/codius-install/c8s/c8s-install.sh"
+K8S_MANIFEST_PATH="https://raw.githubusercontent.com/wilsonianb/codius-install/c8s/manifests"
 ########## k3s ##########
 K3S_URL="https://raw.githubusercontent.com/rancher/k3s/v0.9.0/install.sh"
 K3S_VERSION=`echo "$K3S_URL" | grep -Po 'v\d+.\d+.\d+'`
+########## Gloo ##########
+GLOO_URL="https://run.solo.io/gloo/install"
 ########## Calico ##########
 CALICO_URL="https://docs.projectcalico.org/v3.9/manifests/calico-policy-only.yaml"
 ########## Local Path Provisioner ##########
@@ -55,7 +57,7 @@ LIGHT=`tput bold `
 RESET=`tput sgr0`
 #Error Message#Error Message
 ERR_ROOT_PRIVILEGE_REQUIRED=(10 "This install script need root privilege, please retry use 'sudo' or root user!")
-ERR_NOT_PUBLIC_IP=(11 "You need a public IP to run Codius!")
+ERR_NOT_PUBLIC_IP=(11 "You need a public IP to run c8s!")
 ERR_MONEYD_CONFIGURE=(12 "There is an error on configuring moneyd, please check you entered correct secret and your account have at least 36 XRP. If you meet these requirements, please restart the script and try again.")
 ERR_UNKNOWN_MSG_TYPE=98
 ERR_UNKNOWN=99
@@ -64,16 +66,16 @@ ERR_UNKNOWN=99
 display_header()
 {
 cat <<"EOF"
-
-     ____          _ _             ___           _        _ _           
-    / ___|___   __| (_)_   _ ___  |_ _|_ __  ___| |_ __ _| | | ___ _ __ 
-   | |   / _ \ / _` | | | | / __|  | || '_ \/ __| __/ _` | | |/ _ \ '__|
-   | |__| (_) | (_| | | |_| \__ \  | || | | \__ \ || (_| | | |  __/ |   
-    \____\___/ \__,_|_|\__,_|___/ |___|_| |_|___/\__\__,_|_|_|\___|_|   
-
-
-This script will let you setup your own Codius host in minutes,
-even if you haven't used codius before. 
+         ___        _____           _        _ _           
+        / _ \      |_   _|         | |      | | |          
+     __| (_) |___    | |  _ __  ___| |_ __ _| | | ___ _ __ 
+    / __> _ </ __|   | | | '_ \/ __| __/ _` | | |/ _ \ '__|
+   | (_| (_) \__ \  _| |_| | | \__ \ || (_| | | |  __/ |   
+    \___\___/|___/ |_____|_| |_|___/\__\__,_|_|_|\___|_|   
+                                                         
+                                                         
+This script will let you setup your own Codiusless (c8s) host in minutes,
+even if you haven't used c8s before.
 It has been designed to be as unobtrusive and universal as possible.
 
 EOF
@@ -189,11 +191,9 @@ install_update_k3s() {
   ${SUDO} ${CURL_C} /tmp/k3s-install.sh ${K3S_URL} >>"${LOG_OUTPUT}" 2>&1 && ${SUDO} chmod a+x /tmp/k3s-install.sh
 
   local INSTALL_K3S_VERSION="${K3S_VERSION}"
-  _exec bash /tmp/k3s-install.sh --cluster-cidr=192.168.0.0/16
+  _exec bash /tmp/k3s-install.sh --cluster-cidr=192.168.0.0/16 --no-deploy=traefik
   sleep 10
   _exec kubectl wait --for=condition=Available -n kube-system deployment/coredns
-  _exec kubectl wait --for=condition=complete --timeout=300s -n kube-system job/helm-install-traefik
-  _exec kubectl wait --for=condition=Available -n kube-system deployment/traefik
 }
 
 install_update_kata() {
@@ -230,17 +230,16 @@ install_update_cert_manager() {
   _exec kubectl wait --for=condition=Available -n cert-manager deployment/cert-manager-webhook
 }
 
-install_update_moneyd() {
-  # _exec kubectl apply -f "${K8S_MANIFEST_PATH}/moneyd.yaml"
-  _exec kubectl apply -f "${K8S_MANIFEST_PATH}/moneyd-local.yaml"
-  _exec kubectl rollout status deployment -n moneyd moneyd
-}
-
-install_update_codiusd() {
-  ${SUDO} ${CURL_C} /tmp/codiusd.yaml "${K8S_MANIFEST_PATH}/codiusd.yaml" >>"${LOG_OUTPUT}" 2>&1
-  sed -i s/codius.example.com/$HOSTNAME/g /tmp/codiusd.yaml
-  _exec kubectl apply -f /tmp/codiusd.yaml
-  _exec kubectl rollout status deployment -n codiusd codiusd
+install_update_c8s() {
+  ${SUDO} ${CURL_C} /tmp/c8s.yaml "${K8S_MANIFEST_PATH}/c8s.yaml" >>"${LOG_OUTPUT}" 2>&1
+  sed -i s/c8s.example.com/$HOSTNAME/g /tmp/c8s.yaml
+  sed -i s/'\$example.com\/codius'/$(echo $PAYMENTPOINTER | sed -e 's/[\/&]/\\&/g')/g /tmp/c8s.yaml
+  _exec kubectl apply -f /tmp/c8s.yaml
+  _exec kubectl wait service.serving.knative.dev/c8s --for=condition=Ready -n c8s
+  ${SUDO} ${CURL_C} /tmp/c8s-virtual-service.yaml "${K8S_MANIFEST_PATH}/c8s-virtual-service.yaml" >>"${LOG_OUTPUT}" 2>&1
+  sed -i s/c8s.example.com/$HOSTNAME/g /tmp/c8s-virtual-service.yaml
+  sed -i s/c8s-service/c8s-`kubectl get service -n c8s --selector networking.internal.knative.dev/serviceType=Public -o jsonpath='{.items[*].metadata.name}'-80`/g /tmp/c8s-virtual-service.yaml
+  _exec kubectl apply -f /tmp/c8s-virtual-service.yaml
 }
 
 # ============================================== Helpers
@@ -272,7 +271,7 @@ install()
   fi
 
   # Hostname
-  echo "[+] What is your Codius hostname?"
+  echo "[+] What is your c8s hostname?"
   read -p "Hostname: " -e -i `uname -n` HOSTNAME
   if [[ -z "$HOSTNAME" ]]; then
     show_message error "No Hostname entered, exiting..."
@@ -329,6 +328,18 @@ install()
     done
   fi
 
+  # Payment pointer
+  echo "[+] What is your payment pointer (\$example.com/bob)?"
+  while true; do
+    read -p "Payment pointer: " -e PAYMENTPOINTER
+
+    if [[ -z "$PAYMENTPOINTER" ]] || ! [[ "$PAYMENTPOINTER" =~ $(echo '^\$[-a-zA-Z0-9@:%._\+~#=]{2,256}\.[a-z]{2,4}\b([-a-zA-Z0-9@:%_\+.~#?&//=]*)$') ]]; then
+        show_message error "Invalid payment pointer entered, try again..."
+    else
+      break
+    fi
+  done
+
   show_message debug "Setting hostname using 'hostnamectl'"
   # Set hostname
   ${SUDO} hostnamectl set-hostname $HOSTNAME
@@ -367,17 +378,26 @@ EOF
   show_message info "[+] Installing Kata Containers... "
   install_update_kata
 
+  show_message info "[+] Installing Gloo... "
+  ${SUDO} ${CURL_C} /tmp/gloo-install.sh ${GLOO_URL} >>"${LOG_OUTPUT}" 2>&1 && ${SUDO} chmod a+x /tmp/gloo-install.sh
+  _exec bash /tmp/gloo-install.sh
+  export PATH=$HOME/.gloo/bin:$PATH
+  _exec KUBECONFIG=/etc/rancher/k3s/k3s.yaml glooctl install gateway
+  _exec kubectl wait --for=condition=Available -n gloo-system deployment/gloo
+  _exec KUBECONFIG=/etc/rancher/k3s/k3s.yaml glooctl install knative
+  _exec kubectl wait --for=condition=Available -n gloo-system deployment/knative-internal-proxy
+
   show_message info "[+] Installing Calico policy enforcement... "
   install_update_calico
-
-  show_message info "[+] Installing Local path storage... "
-  install_update_local_storage
 
   # ============================================== Kubernetes
 
   # Certificate ==============================================
 
   if [[ -z "$CERTFILE" ]]; then
+    show_message info "[+] Installing Local path storage... "
+    install_update_local_storage
+
     show_message info "[+] Installing acme-dns... "
 
     ${SUDO} ${CURL_C} /tmp/config.cfg https://raw.githubusercontent.com/joohoi/acme-dns/master/config.cfg >>"${LOG_OUTPUT}" 2>&1
@@ -416,54 +436,37 @@ EOF
 
     read -n1 -r -p "Press any key to continue..."
 
-    _exec kubectl create namespace codiusd
-    _exec kubectl create secret generic certmanager-secret --namespace=codiusd --from-file=/tmp/acme-dns.json
+    _exec kubectl create secret generic certmanager-secret --namespace=gloo-system --from-file=/tmp/acme-dns.json
 
-    ${SUDO} ${CURL_C} /tmp/codius-host-issuer.yaml "${K8S_MANIFEST_PATH}/codius-host-issuer.yaml" >>"${LOG_OUTPUT}" 2>&1
-    sed -i s/yourname@codius.example.com/$EMAIL/g /tmp/codius-host-issuer.yaml
-    _exec kubectl apply -f /tmp/codius-host-issuer.yaml
-    _exec kubectl wait --for=condition=Ready --timeout=60s -n codiusd issuer/issuer-letsencrypt
+    ${SUDO} ${CURL_C} /tmp/c8s-issuer.yaml "${K8S_MANIFEST_PATH}/c8s-issuer.yaml" >>"${LOG_OUTPUT}" 2>&1
+    sed -i s/yourname@c8s.example.com/$EMAIL/g /tmp/c8s-issuer.yaml
+    _exec kubectl apply -f /tmp/c8s-issuer.yaml
+    _exec kubectl wait --for=condition=Ready --timeout=60s -n gloo-system issuer/issuer-letsencrypt
 
-    ${SUDO} ${CURL_C} /tmp/codius-host-certificate.yaml "${K8S_MANIFEST_PATH}/codius-host-certificate.yaml" >>"${LOG_OUTPUT}" 2>&1
-    sed -i s/codius.example.com/$HOSTNAME/g /tmp/codius-host-certificate.yaml
-    _exec kubectl apply -f /tmp/codius-host-certificate.yaml
-    _exec kubectl wait --for=condition=Ready --timeout=600s -n codiusd certificate/codius-host-certificate
+    ${SUDO} ${CURL_C} /tmp/c8s-certificate.yaml "${K8S_MANIFEST_PATH}/c8s-certificate.yaml" >>"${LOG_OUTPUT}" 2>&1
+    sed -i s/c8s.example.com/$HOSTNAME/g /tmp/c8s-certificate.yaml
+    _exec kubectl apply -f /tmp/c8s-certificate.yaml
+    _exec kubectl wait --for=condition=Ready --timeout=600s -n gloo-system certificate/c8s-certificate
   else
-    _exec kubectl create namespace codiusd
-    _exec kubectl create secret tls codiusd-certificate --key $KEYFILE --cert $CERTFILE --namespace codiusd
+    _exec kubectl create secret tls c8s-certificate --key $KEYFILE --cert $CERTFILE --namespace gloo-system
   fi
 
   # ============================================== Certificate
 
-  # Moneyd ==============================================
+  # c8s =============================================
 
-  show_message info "[+] Installing Moneyd... "
+  show_message info "[+] Installing c8s... "
+  install_update_c8s
 
-  # _exec kubectl create namespace moneyd
-  # _exec kubectl run moneyd-config -n moneyd --image wilsonianbcoil/moneyd-xrp --generator=run-pod/v1 --restart=Never --command -- sleep 1000
-  # _exec kubectl wait --for=condition=Ready --timeout=60s -n moneyd pod/moneyd-config
-  # # echo -ne "$SECRET\n" | ${SUDO} $(which moneyd) xrp:configure > /dev/null 2>&1 || { show_message error "${ERR_MONEYD_CONFIGURE[1]}" ; exit "${ERR_MONEYD_CONFIGURE[0]}" ; }
-  # kubectl exec moneyd-config -n moneyd -it -- /usr/local/bin/moneyd xrp:configure -t --advanced
-  # _exec kubectl create secret generic moneyd-config -n moneyd --from-file=.moneyd.json=<(kubectl exec moneyd-config -n moneyd -- cat /root/.moneyd.test.json)
-  # _exec kubectl delete pod moneyd-config -n moneyd
-  install_update_moneyd
-
-  # ============================================== Moneyd
-
-  # Codiusd =============================================
-
-  show_message info "[+] Installing Codiusd... "
-  install_update_codiusd
-
-  # ============================================= Codiusd
+  # ============================================= c8s
 
   # ============================================== Finishing
   new_line
   printf '%*s\n' "${COLUMNS:-$(tput cols)}" '' | tr ' ' =
   new_line
-  show_message done "[!] Congratulations, it looks like you installed Codius successfully!"
+  show_message done "[!] Congratulations, it looks like you installed c8s successfully!"
   new_line
-  show_message done "[-] You can check your Codius by opening https://$HOSTNAME or by searching for your host at https://codiushosts.com"
+  show_message done "[-] You can check your c8s by opening https://$HOSTNAME"
   show_message done "[-] For installation log visit $LOG_OUTPUT"
   show_message done "[-] You can see everything running in your Kubernetes cluster by running: kubectl get all --all-namespaces"
   new_line
@@ -486,6 +489,8 @@ update()
   show_message info "[+] Updating Kata Containers... "
   install_update_kata
 
+  # TODO: update Gloo/Knative
+
   show_message info "[+] Updating Calico policy enforcement... "
   install_update_calico
 
@@ -498,11 +503,8 @@ update()
   show_message info "[+] Updating cert-manager... "
   install_update_cert_manager
 
-  show_message info "[+] Updating Moneyd... "
-  install_update_moneyd
-
-  show_message info "[+] Updating Codiusd... "
-  install_update_codiusd
+  show_message info "[+] Updating c8s... "
+  install_update_c8s
 
   printf "\n\n"
   show_message done "[!] Everything done!"
@@ -520,7 +522,7 @@ clean(){
   check_user
 
   show_message warn "This action will remove packages listed below and all configuration files belonging to them:
-  \n* k3s\n* Kata Containers\n* Codiusd\n* Moneyd"
+  \n* k3s\n* Kata Containers\n* c8s\n* Moneyd"
 
   new_line
   read -p "Continue Anyway? [y/N]: " -e CONTINUE
@@ -552,15 +554,15 @@ debug(){
   export CODIUS_PUBLIC_URI=https://$HOSTNAME
 
 
-  local services=( hyperd moneyd codiusd nginx )
-  local commands=( node npm hyperd hyperctl moneyd codiusd certbot )
+  local services=( hyperd moneyd c8s nginx )
+  local commands=( node npm hyperd hyperctl moneyd c8s certbot )
   local debug_commands=('node -v ; npm -v ; yarn -v'
     'hyperd run -t test /bin/sh'
     'hyperctl info'
     'hyperctl list'
     'moneyd xrp:start'
     'moneyd xrp:info'
-    'codiusd'
+    'c8s'
     'netstat -tulpn'
   )
 
@@ -571,7 +573,7 @@ debug(){
   if [[ $status ]]; then
     validate=( $status )
     if [ ${validate[-2]} == "200" ]; then
-        show_message success "[*] It looks likes Codius is running properly in your host."
+        show_message success "[*] It looks likes c8s is running properly in your host."
         new_line
         read -p "Continue Anyway ? [y/N]: " -e CONTINUE
 
@@ -580,10 +582,10 @@ debug(){
         fi
 
     else
-        show_message warn "It looks like Codius is not running as expected ..."
+        show_message warn "It looks like c8s is not running as expected ..."
     fi
   else
-     show_message warn "It looks like Codius is not running as expected..."
+     show_message warn "It looks like c8s is not running as expected..."
   fi
 
 
@@ -614,7 +616,7 @@ debug(){
 
 
   show_message info "[?] Creating full services log file?"
-  show_message warn "With this action all Codius services will restart for debuging."
+  show_message warn "With this action all c8s services will restart for debuging."
   new_line
   read -p "Do you want to continue ? [y/N]: " -e DEBUG
   if ! [[ "$DEBUG" = 'y' || "$DEBUG" = 'Y' ]]; then
@@ -651,7 +653,7 @@ debug(){
   done
 
   show_message info "[!] Killing debug proccess..."
-  commands_to_kill=(moneyd codiusd hyperd)
+  commands_to_kill=(moneyd c8s hyperd)
   for p in "${commands_to_kill[@]}"
   do
     ${SUDO} kill -9 $(ps -ef|grep $p |grep -v "grep"|awk '{print $2}') || true
@@ -718,10 +720,10 @@ do
   check_script_update
 
   echo "What do you want to do?"
-                  echo "   1) Install and run Codius in your system"
-                  # echo "   2) Check your system for Codius errors"
-                  echo "   2) Cleanup the codius from the server"
-                  echo "   3) Update Codius host components to the latest versions"
+                  echo "   1) Install and run c8s in your system"
+                  # echo "   2) Check your system for c8s errors"
+                  echo "   2) Cleanup c8s from the server"
+                  echo "   3) Update c8s components to the latest versions"
                   echo "   4) Exit"
   read -p "Select an option [1-4]: " option
 

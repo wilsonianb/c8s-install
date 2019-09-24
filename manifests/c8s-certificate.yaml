@@ -1,0 +1,21 @@
+apiVersion: certmanager.k8s.io/v1alpha1
+kind: Certificate
+metadata:
+  name: c8s-certificate
+  namespace: gloo-system
+spec:
+  secretName: c8s-certificate
+  issuerRef:
+    name: issuer-letsencrypt
+    namespace: gloo-system
+  commonName: c8s.example.com
+  dnsNames:
+  - c8s.example.com
+  - "*.c8s.example.com"
+  acme:
+    config:
+    - dns01:
+        provider: acmedns
+      domains:
+        - c8s.example.com
+        - "*.c8s.example.com"
