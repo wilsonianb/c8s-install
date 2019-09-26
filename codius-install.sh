@@ -208,6 +208,7 @@ install_update_kata() {
 
 install_update_calico() {
   _exec kubectl apply -f $CALICO_URL
+  sleep 5
   _exec kubectl rollout status ds -n kube-system calico-node
 }
 
