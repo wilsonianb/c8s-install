@@ -290,19 +290,43 @@ install()
   #   fi
   # done
 
-
-  # Email for certbot
-  echo "[+] What is your email address?"
+  # Existing SSL certificate
+  echo "[+] What is the file path for your SSL certificate? Leave blank to auto-generate certificate."
   while true; do
-    read -p "Email: " -e EMAIL
+    read -p "Filepath: " -e CERTFILE
 
-    if [[ -z "$EMAIL" ]] || ! [[ "$EMAIL" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,4}$ ]]; then
-        show_message error "Invalid email entered, try again..."
-    else
+    if [[ -z "$CERTFILE" ]] || [[ -e "$CERTFILE" ]]; then
       break
+    else
+      show_message error "Invalid file path entered, try again..."
     fi
   done
 
+  if [[ -z "$CERTFILE" ]]; then
+    # Email for certbot
+    echo "[+] What is your email address?"
+    while true; do
+      read -p "Email: " -e EMAIL
+
+      if [[ -z "$EMAIL" ]] || ! [[ "$EMAIL" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,4}$ ]]; then
+          show_message error "Invalid email entered, try again..."
+      else
+        break
+      fi
+    done
+  else
+    # SSL key
+    echo "[+] What is the file path for your SSL key?"
+    while true; do
+      read -p "Filepath: " -e KEYFILE
+
+      if [[ -e "$KEYFILE" ]]; then
+        break
+      else
+        show_message error "Invalid file path entered, try again..."
+      fi
+    done
+  fi
 
   show_message debug "Setting hostname using 'hostnamectl'"
   # Set hostname
@@ -310,14 +334,13 @@ install()
 
   # Subdomain DNS ==============================================
   new_line
-  show_message info "[+] Please create two A records and one NS record within your domain DNS like the examples below:"
+  show_message info "[+] Please create two A records within your domain DNS like the examples below:"
   new_line
   cat <<EOF
 ------------------------------------------------------------
 
 $HOSTNAME.      300     IN      A       $IP
 *.$HOSTNAME.    300     IN      A       $IP
-acme.$HOSTNAME. 300     IN      NS      $HOSTNAME
 
 ------------------------------------------------------------
 EOF
@@ -349,58 +372,65 @@ EOF
   show_message info "[+] Installing Local path storage... "
   install_update_local_storage
 
-  show_message info "[+] Installing acme-dns... "
-
-  ${SUDO} ${CURL_C} /tmp/config.cfg https://raw.githubusercontent.com/joohoi/acme-dns/master/config.cfg >>"${LOG_OUTPUT}" 2>&1
-  sed -i s/auth.example.org/acme.$HOSTNAME/g /tmp/config.cfg
-  sed -i s/127.0.0.1/0.0.0.0/g /tmp/config.cfg
-  sed -i 's/= "both"/= "udp"/g' /tmp/config.cfg
-  sed -i s/198.51.100.1/`ifconfig $(route -n | grep ^0.0.0.0 | awk '{print $NF}') | grep inet | grep -v inet6 | awk '{print $2}'`/g /tmp/config.cfg
-
-  _exec kubectl create namespace acme-dns
-  _exec kubectl create configmap acme-dns-config --namespace=acme-dns --from-file=/tmp/config.cfg
-  install_update_acme_dns
-
-  show_message info "[+] Installing cert-manager... "
-  install_update_cert_manager
-
   # ============================================== Kubernetes
 
   # Certificate ==============================================
-  show_message info "[+] Generating certificate for ${HOSTNAME}"
 
-  local ACME_DNS_IP=`kubectl describe pods --namespace=acme-dns --selector=app=acme-dns | grep IP | awk '{print $2}'`
-  local ACME_CREDS=`curl -sX POST http://$ACME_DNS_IP/register`
-  tee /tmp/acme-dns.json << EOF > /dev/null
+  if [[ -z "$CERTFILE" ]]; then
+    show_message info "[+] Installing acme-dns... "
+
+    ${SUDO} ${CURL_C} /tmp/config.cfg https://raw.githubusercontent.com/joohoi/acme-dns/master/config.cfg >>"${LOG_OUTPUT}" 2>&1
+    sed -i s/auth.example.org/acme.$HOSTNAME/g /tmp/config.cfg
+    sed -i s/127.0.0.1/0.0.0.0/g /tmp/config.cfg
+    sed -i 's/= "both"/= "udp"/g' /tmp/config.cfg
+    sed -i s/198.51.100.1/`ifconfig $(route -n | grep ^0.0.0.0 | awk '{print $NF}') | grep inet | grep -v inet6 | awk '{print $2}'`/g /tmp/config.cfg
+
+    _exec kubectl create namespace acme-dns
+    _exec kubectl create configmap acme-dns-config --namespace=acme-dns --from-file=/tmp/config.cfg
+    install_update_acme_dns
+
+    show_message info "[+] Installing cert-manager... "
+    install_update_cert_manager
+
+    show_message info "[+] Generating certificate for ${HOSTNAME}"
+
+    local ACME_DNS_IP=`kubectl describe pods --namespace=acme-dns --selector=app=acme-dns | grep IP | awk '{print $2}'`
+    local ACME_CREDS=`curl -sX POST http://$ACME_DNS_IP/register`
+    tee /tmp/acme-dns.json << EOF > /dev/null
 {"$HOSTNAME": $ACME_CREDS, "*.$HOSTNAME": $ACME_CREDS}
 EOF
 
   local ACME_FULL_DOMAIN=`sed -e 's/[{}]/''/g' /tmp/acme-dns.json | awk -v RS=',"' -F: '/^fulldomain/ {print $2; exit;}' | tr -d \"`
   new_line
-  show_message info "[+] Please create a CNAME record within your domain DNS like the example below:"
+  show_message info "[+] Please create an NS and CNAME record within your domain DNS like the examples below:"
   new_line
   cat <<EOF
 ------------------------------------------------------------
 
+acme.$HOSTNAME.            300     IN      NS         $HOSTNAME
 _acme-challenge.$HOSTNAME. 300     IN      CNAME      $ACME_FULL_DOMAIN
 
 ------------------------------------------------------------
 EOF
 
-  read -n1 -r -p "Press any key to continue..."
+    read -n1 -r -p "Press any key to continue..."
 
-  _exec kubectl create namespace codiusd
-  _exec kubectl create secret generic certmanager-secret --namespace=codiusd --from-file=/tmp/acme-dns.json
+    _exec kubectl create namespace codiusd
+    _exec kubectl create secret generic certmanager-secret --namespace=codiusd --from-file=/tmp/acme-dns.json
 
-  ${SUDO} ${CURL_C} /tmp/codius-host-issuer.yaml "${K8S_MANIFEST_PATH}/codius-host-issuer.yaml" >>"${LOG_OUTPUT}" 2>&1
-  sed -i s/yourname@codius.example.com/$EMAIL/g /tmp/codius-host-issuer.yaml
-  _exec kubectl apply -f /tmp/codius-host-issuer.yaml
-  _exec kubectl wait --for=condition=Ready --timeout=60s -n codiusd issuer/issuer-letsencrypt
+    ${SUDO} ${CURL_C} /tmp/codius-host-issuer.yaml "${K8S_MANIFEST_PATH}/codius-host-issuer.yaml" >>"${LOG_OUTPUT}" 2>&1
+    sed -i s/yourname@codius.example.com/$EMAIL/g /tmp/codius-host-issuer.yaml
+    _exec kubectl apply -f /tmp/codius-host-issuer.yaml
+    _exec kubectl wait --for=condition=Ready --timeout=60s -n codiusd issuer/issuer-letsencrypt
 
-  ${SUDO} ${CURL_C} /tmp/codius-host-certificate.yaml "${K8S_MANIFEST_PATH}/codius-host-certificate.yaml" >>"${LOG_OUTPUT}" 2>&1
-  sed -i s/codius.example.com/$HOSTNAME/g /tmp/codius-host-certificate.yaml
+    ${SUDO} ${CURL_C} /tmp/codius-host-certificate.yaml "${K8S_MANIFEST_PATH}/codius-host-certificate.yaml" >>"${LOG_OUTPUT}" 2>&1
+    sed -i s/codius.example.com/$HOSTNAME/g /tmp/codius-host-certificate.yaml
   _exec kubectl apply -f /tmp/codius-host-certificate.yaml
   _exec kubectl wait --for=condition=Ready --timeout=600s -n codiusd certificate/codius-host-certificate
+  else
+    _exec kubectl create namespace codiusd
+    _exec kubectl create secret tls codiusd-certificate --key $KEYFILE --cert $CERTFILE --namespace codiusd
+  fi
 
   # ============================================== Certificate
 
