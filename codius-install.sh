@@ -401,11 +401,11 @@ EOF
 {"$HOSTNAME": $ACME_CREDS, "*.$HOSTNAME": $ACME_CREDS}
 EOF
 
-  local ACME_FULL_DOMAIN=`sed -e 's/[{}]/''/g' /tmp/acme-dns.json | awk -v RS=',"' -F: '/^fulldomain/ {print $2; exit;}' | tr -d \"`
-  new_line
-  show_message info "[+] Please create an NS and CNAME record within your domain DNS like the examples below:"
-  new_line
-  cat <<EOF
+    local ACME_FULL_DOMAIN=`sed -e 's/[{}]/''/g' /tmp/acme-dns.json | awk -v RS=',"' -F: '/^fulldomain/ {print $2; exit;}' | tr -d \"`
+    new_line
+    show_message info "[+] Please create an NS and CNAME record within your domain DNS like the examples below:"
+    new_line
+    cat <<EOF
 ------------------------------------------------------------
 
 acme.$HOSTNAME.            300     IN      NS         $HOSTNAME
@@ -426,8 +426,8 @@ EOF
 
     ${SUDO} ${CURL_C} /tmp/codius-host-certificate.yaml "${K8S_MANIFEST_PATH}/codius-host-certificate.yaml" >>"${LOG_OUTPUT}" 2>&1
     sed -i s/codius.example.com/$HOSTNAME/g /tmp/codius-host-certificate.yaml
-  _exec kubectl apply -f /tmp/codius-host-certificate.yaml
-  _exec kubectl wait --for=condition=Ready --timeout=600s -n codiusd certificate/codius-host-certificate
+    _exec kubectl apply -f /tmp/codius-host-certificate.yaml
+    _exec kubectl wait --for=condition=Ready --timeout=600s -n codiusd certificate/codius-host-certificate
   else
     _exec kubectl create namespace codiusd
     _exec kubectl create secret tls codiusd-certificate --key $KEYFILE --cert $CERTFILE --namespace codiusd
