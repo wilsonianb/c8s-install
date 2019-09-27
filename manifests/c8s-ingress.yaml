@@ -9,7 +9,7 @@ metadata:
     ingress.kubernetes.io/hsts-max-age: "63072000"
     ingress.kubernetes.io/hsts-include-subdomains: "true"
     ingress.kubernetes.io/hsts-preload: "true"
-    ingress.kubernetes.io/frame-deny: "true"
+    ingress.kubernetes.io/content-security-policy: "frame-ancestors *.c8s.example.com"
     ingress.kubernetes.io/content-type-nosniff: "true"
     ingress.kubernetes.io/browser-xss-filter: "true"
 spec:
