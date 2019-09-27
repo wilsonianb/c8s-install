@@ -191,9 +191,11 @@ install_update_k3s() {
   ${SUDO} ${CURL_C} /tmp/k3s-install.sh ${K3S_URL} >>"${LOG_OUTPUT}" 2>&1 && ${SUDO} chmod a+x /tmp/k3s-install.sh
 
   local INSTALL_K3S_VERSION="${K3S_VERSION}"
-  _exec bash /tmp/k3s-install.sh --cluster-cidr=192.168.0.0/16 --no-deploy=traefik
+  _exec bash /tmp/k3s-install.sh --cluster-cidr=192.168.0.0/16
   sleep 10
   _exec kubectl wait --for=condition=Available -n kube-system deployment/coredns
+  _exec kubectl wait --for=condition=complete --timeout=300s -n kube-system job/helm-install-traefik
+  _exec kubectl wait --for=condition=Available -n kube-system deployment/traefik
 }
 
 install_update_kata() {
@@ -235,11 +237,11 @@ install_update_c8s() {
   sed -i s/c8s.example.com/$HOSTNAME/g /tmp/c8s.yaml
   sed -i s/'\$example.com\/codius'/$(echo $PAYMENTPOINTER | sed -e 's/[\/&]/\\&/g')/g /tmp/c8s.yaml
   _exec kubectl apply -f /tmp/c8s.yaml
-  _exec kubectl wait service.serving.knative.dev/c8s --for=condition=Ready -n c8s
-  ${SUDO} ${CURL_C} /tmp/c8s-virtual-service.yaml "${K8S_MANIFEST_PATH}/c8s-virtual-service.yaml" >>"${LOG_OUTPUT}" 2>&1
-  sed -i s/c8s.example.com/$HOSTNAME/g /tmp/c8s-virtual-service.yaml
-  sed -i s/c8s-service/c8s-`kubectl get service -n c8s --selector networking.internal.knative.dev/serviceType=Public -o jsonpath='{.items[*].metadata.name}'-80`/g /tmp/c8s-virtual-service.yaml
-  _exec kubectl apply -f /tmp/c8s-virtual-service.yaml
+  _exec kubectl wait service.serving.knative.dev/c8s --for=condition=Ready --timeout=60s -n c8s
+  ${SUDO} ${CURL_C} /tmp/c8s-ingress.yaml "${K8S_MANIFEST_PATH}/c8s-ingress.yaml" >>"${LOG_OUTPUT}" 2>&1
+  sed -i s/c8s.example.com/$HOSTNAME/g /tmp/c8s-ingress.yaml
+  sed -i s/c8s-service/`kubectl get service -n c8s --selector networking.internal.knative.dev/serviceType=Public -o jsonpath='{.items[*].metadata.name}'`/g /tmp/c8s-ingress.yaml
+  _exec kubectl apply -f /tmp/c8s-ingress.yaml
 }
 
 # ============================================== Helpers
@@ -382,8 +384,6 @@ EOF
   ${SUDO} ${CURL_C} /tmp/gloo-install.sh ${GLOO_URL} >>"${LOG_OUTPUT}" 2>&1 && ${SUDO} chmod a+x /tmp/gloo-install.sh
   _exec bash /tmp/gloo-install.sh
   export PATH=$HOME/.gloo/bin:$PATH
-  _exec KUBECONFIG=/etc/rancher/k3s/k3s.yaml glooctl install gateway
-  _exec kubectl wait --for=condition=Available -n gloo-system deployment/gloo
   _exec KUBECONFIG=/etc/rancher/k3s/k3s.yaml glooctl install knative
   _exec kubectl wait --for=condition=Available -n gloo-system deployment/knative-internal-proxy
 
@@ -448,7 +448,8 @@ EOF
     _exec kubectl apply -f /tmp/c8s-certificate.yaml
     _exec kubectl wait --for=condition=Ready --timeout=600s -n gloo-system certificate/c8s-certificate
   else
-    _exec kubectl create secret tls c8s-certificate --key $KEYFILE --cert $CERTFILE --namespace gloo-system
+    _exec kubectl create namespace c8s
+    _exec kubectl create secret tls c8s-certificate --key $KEYFILE --cert $CERTFILE --namespace c8s
   fi
 
   # ============================================== Certificate
