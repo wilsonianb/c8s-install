@@ -38,8 +38,11 @@ K8S_MANIFEST_PATH="https://raw.githubusercontent.com/wilsonianb/codius-install/c
 ########## k3s ##########
 K3S_URL="https://raw.githubusercontent.com/rancher/k3s/v0.9.0/install.sh"
 K3S_VERSION=`echo "$K3S_URL" | grep -Po 'v\d+.\d+.\d+'`
-########## Gloo ##########
-GLOO_URL="https://run.solo.io/gloo/install"
+########## Istio ##########
+ISTIO_CRD_URL="https://raw.githubusercontent.com/knative/serving/master/third_party/istio-1.2.6/istio-crds.yaml"
+ISTIO_LEAN_URL="https://raw.githubusercontent.com/knative/serving/master/third_party/istio-1.2.6/istio-lean.yaml"
+########## Knative ##########
+KNATIVE_URL="https://github.com/knative/serving/releases/download/v0.9.0/serving.yaml"
 ########## Calico ##########
 CALICO_URL="https://docs.projectcalico.org/v3.9/manifests/calico-policy-only.yaml"
 ########## Local Path Provisioner ##########
@@ -191,11 +194,9 @@ install_update_k3s() {
   ${SUDO} ${CURL_C} /tmp/k3s-install.sh ${K3S_URL} >>"${LOG_OUTPUT}" 2>&1 && ${SUDO} chmod a+x /tmp/k3s-install.sh
 
   local INSTALL_K3S_VERSION="${K3S_VERSION}"
-  _exec bash /tmp/k3s-install.sh --cluster-cidr=192.168.0.0/16
+  _exec bash /tmp/k3s-install.sh --cluster-cidr=192.168.0.0/16 --no-deploy=traefik
   sleep 10
   _exec kubectl wait --for=condition=Available -n kube-system deployment/coredns
-  _exec kubectl wait --for=condition=complete --timeout=300s -n kube-system job/helm-install-traefik
-  _exec kubectl wait --for=condition=Available -n kube-system deployment/traefik
 }
 
 install_update_kata() {
@@ -206,6 +207,26 @@ install_update_kata() {
   _exec kubectl apply -f "${K8S_MANIFEST_PATH}/kata-deploy.yaml"
   _exec kubectl rollout status ds -n kube-system kata-deploy
   _exec kubectl apply -f https://raw.githubusercontent.com/kata-containers/packaging/master/kata-deploy/k8s-1.14/kata-qemu-runtimeClass.yaml
+}
+
+install_update_istio() {
+  _exec kubectl apply -f $ISTIO_CRD_URL
+  sleep 5
+  _exec kubectl wait --for=condition=complete --timeout=300s -n istio-system job/istio-init-crd-10
+  _exec kubectl wait --for=condition=complete --timeout=300s -n istio-system job/istio-init-crd-11
+  _exec kubectl wait --for=condition=complete --timeout=300s -n istio-system job/istio-init-crd-12
+  _exec kubectl apply -f $ISTIO_LEAN_URL
+  _exec kubectl wait --for=condition=Available --timeout=300s -n istio-system deployment/istio-ingressgateway
+  _exec kubectl wait --for=condition=Available --timeout=300s -n istio-system deployment/cluster-local-gateway
+  _exec kubectl wait --for=condition=Available --timeout=300s -n istio-system deployment/istio-pilot
+}
+
+install_update_knative() {
+  kubectl apply -l knative.dev/crd-install=true -f $KNATIVE_URL >>"${LOG_OUTPUT}" 2>&1 || _exec kubectl apply -l knative.dev/crd-install=true -f $KNATIVE_URL
+  _exec kubectl apply -f $KNATIVE_URL
+  _exec kubectl wait --for=condition=Available -n knative-serving deployment/autoscaler
+  ${SUDO} ${CURL_C} /tmp/gateway-patch.json "${K8S_MANIFEST_PATH}/gateway-patch.json" >>"${LOG_OUTPUT}" 2>&1
+  kubectl patch gateway knative-ingress-gateway -n knative-serving --type json -p="$(cat /tmp/gateway-patch.json)" >>"${LOG_OUTPUT}" 2>&1
 }
 
 install_update_calico() {
@@ -238,10 +259,10 @@ install_update_c8s() {
   sed -i s/'\$example.com\/codius'/$(echo $PAYMENTPOINTER | sed -e 's/[\/&]/\\&/g')/g /tmp/c8s.yaml
   _exec kubectl apply -f /tmp/c8s.yaml
   _exec kubectl wait service.serving.knative.dev/c8s --for=condition=Ready --timeout=60s -n c8s
-  ${SUDO} ${CURL_C} /tmp/c8s-ingress.yaml "${K8S_MANIFEST_PATH}/c8s-ingress.yaml" >>"${LOG_OUTPUT}" 2>&1
-  sed -i s/c8s.example.com/$HOSTNAME/g /tmp/c8s-ingress.yaml
-  sed -i s/c8s-service/`kubectl get service -n c8s --selector networking.internal.knative.dev/serviceType=Public -o jsonpath='{.items[*].metadata.name}'`/g /tmp/c8s-ingress.yaml
-  _exec kubectl apply -f /tmp/c8s-ingress.yaml
+  ${SUDO} ${CURL_C} /tmp/c8s-virtual-service.yaml "${K8S_MANIFEST_PATH}/c8s-virtual-service.yaml" >>"${LOG_OUTPUT}" 2>&1
+  sed -i s/c8s.example.com/$HOSTNAME/g /tmp/c8s-virtual-service.yaml
+  sed -i s/c8s-service/`kubectl get service -n c8s --selector networking.internal.knative.dev/serviceType=Public -o jsonpath='{.items[*].metadata.name}'`/g /tmp/c8s-virtual-service.yaml
+  _exec kubectl apply -f /tmp/c8s-virtual-service.yaml
 }
 
 # ============================================== Helpers
@@ -380,12 +401,8 @@ EOF
   show_message info "[+] Installing Kata Containers... "
   install_update_kata
 
-  show_message info "[+] Installing Gloo... "
-  ${SUDO} ${CURL_C} /tmp/gloo-install.sh ${GLOO_URL} >>"${LOG_OUTPUT}" 2>&1 && ${SUDO} chmod a+x /tmp/gloo-install.sh
-  _exec bash /tmp/gloo-install.sh
-  export PATH=$HOME/.gloo/bin:$PATH
-  _exec KUBECONFIG=/etc/rancher/k3s/k3s.yaml glooctl install knative
-  _exec kubectl wait --for=condition=Available -n gloo-system deployment/knative-internal-proxy
+  show_message info "[+] Installing Istio... "
+  install_update_istio
 
   show_message info "[+] Installing Calico policy enforcement... "
   install_update_calico
@@ -436,23 +453,29 @@ EOF
 
     read -n1 -r -p "Press any key to continue..."
 
-    _exec kubectl create secret generic certmanager-secret --namespace=gloo-system --from-file=/tmp/acme-dns.json
+    _exec kubectl create secret generic certmanager-secret --namespace=istio-system --from-file=/tmp/acme-dns.json
 
     ${SUDO} ${CURL_C} /tmp/c8s-issuer.yaml "${K8S_MANIFEST_PATH}/c8s-issuer.yaml" >>"${LOG_OUTPUT}" 2>&1
     sed -i s/yourname@c8s.example.com/$EMAIL/g /tmp/c8s-issuer.yaml
     _exec kubectl apply -f /tmp/c8s-issuer.yaml
-    _exec kubectl wait --for=condition=Ready --timeout=60s -n gloo-system issuer/issuer-letsencrypt
+    _exec kubectl wait --for=condition=Ready --timeout=60s -n istio-system issuer/issuer-letsencrypt
 
     ${SUDO} ${CURL_C} /tmp/c8s-certificate.yaml "${K8S_MANIFEST_PATH}/c8s-certificate.yaml" >>"${LOG_OUTPUT}" 2>&1
     sed -i s/c8s.example.com/$HOSTNAME/g /tmp/c8s-certificate.yaml
     _exec kubectl apply -f /tmp/c8s-certificate.yaml
-    _exec kubectl wait --for=condition=Ready --timeout=600s -n gloo-system certificate/c8s-certificate
+    _exec kubectl wait --for=condition=Ready --timeout=600s -n istio-system certificate/c8s-certificate
   else
-    _exec kubectl create namespace c8s
-    _exec kubectl create secret tls c8s-certificate --key $KEYFILE --cert $CERTFILE --namespace c8s
+    _exec kubectl create secret tls istio-ingressgateway-certs --key $KEYFILE --cert $CERTFILE --namespace istio-system
   fi
 
   # ============================================== Certificate
+
+  # Knative =============================================
+
+  show_message info "[+] Installing Knative... "
+  install_update_knative
+
+  # ============================================== Knative
 
   # c8s =============================================
 
@@ -490,7 +513,7 @@ update()
   show_message info "[+] Updating Kata Containers... "
   install_update_kata
 
-  # TODO: update Gloo/Knative
+  # TODO: update Istio/Knative
 
   show_message info "[+] Updating Calico policy enforcement... "
   install_update_calico

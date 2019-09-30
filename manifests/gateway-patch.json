@@ -1,0 +1,25 @@
+[{
+  "op": "add",
+  "path": "/spec/servers/0/tls",
+  "value": {
+    "httpsRedirect":true
+  }
+}, {
+  "op": "add",
+  "path": "/spec/servers/-",
+  "value": {
+    "port": {
+      "number": 443,
+      "name": "https",
+      "protocol": "HTTPS"
+    },
+    "hosts": [
+      "*"
+    ],
+    "tls": {
+      "mode": "SIMPLE",
+      "serverCertificate": "/etc/istio/ingressgateway-certs/tls.crt",
+      "privateKey": "/etc/istio/ingressgateway-certs/tls.key"
+    }
+  }
+}]

@@ -1,27 +1,27 @@
-apiVersion: gateway.solo.io/v1
+apiVersion: networking.istio.io/v1alpha3
 kind: VirtualService
 metadata:
-  name: c8s
-  namespace: gloo-system
+  name: c8s-public
+  namespace: c8s
 spec:
-  sslConfig:
-    secretRef:
-      name: c8s-certificate
-      namespace: gloo-system
-  virtualHost:
-    domains:
-    - c8s.example.com
-    - '*.c8s.example.com'
-    routes:
-    - matcher:
-        regex: .*
-      routeAction:
-        single:
-          upstream:
-            name: c8s-service
-            namespace: gloo-system
-      routePlugins:
-        retries:
-          numRetries: 3
-          perTryTimeout: 600s
-        timeout: 600s
+  gateways:
+  - knative-serving/knative-ingress-gateway
+  hosts:
+  - c8s.example.com
+  - "*.c8s.example.com"
+  http:
+  - retries:
+      attempts: 3
+      perTryTimeout: 10m0s
+    route:
+    - destination:
+        host: c8s-service.c8s.svc.cluster.local
+        port:
+          number: 80
+      headers:
+        request:
+          add:
+            Knative-Serving-Namespace: c8s
+            Knative-Serving-Revision: c8s-service
+      weight: 100
+    timeout: 10m0s
