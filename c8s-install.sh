@@ -301,18 +301,6 @@ install()
     exit 0
   fi
 
-  # # Wallet secret for Moneyd
-  # echo "[+] What is your XRP wallet secret? This is required for you to receive XRP via Moneyd."
-
-  # while true; do
-  #   read -p "Wallet Secret: " -e SECRET
-  #   if [[ -z "$SECRET" ]] || ! [[ "$SECRET" =~ ^s[a-zA-Z0-9]{28,}+$ ]] ; then
-  #     show_message error "Invalid wallet secret entered, try again..."
-  #   else
-  #     break
-  #   fi
-  # done
-
   # Existing SSL certificate
   echo "[+] What is the file path for your SSL certificate? Leave blank to auto-generate certificate."
   while true; do
@@ -490,9 +478,9 @@ EOF
   new_line
   show_message done "[!] Congratulations, it looks like you installed c8s successfully!"
   new_line
-  show_message done "[-] You can check your c8s by opening https://$HOSTNAME"
+  show_message done "[-] You can check your c8s host by opening https://$HOSTNAME"
   show_message done "[-] For installation log visit $LOG_OUTPUT"
-  show_message done "[-] You can see everything running in your Kubernetes cluster by running: kubectl get all --all-namespaces"
+  show_message done "[-] You can see everything running in your Kubernetes cluster by running: kubectl get all -A"
   new_line
   printf '%*s\n' "${COLUMNS:-$(tput cols)}" '' | tr ' ' =
 
@@ -513,7 +501,8 @@ update()
   show_message info "[+] Updating Kata Containers... "
   install_update_kata
 
-  # TODO: update Istio/Knative
+  show_message info "[+] Updating Istio... "
+  install_update_istio
 
   show_message info "[+] Updating Calico policy enforcement... "
   install_update_calico
@@ -526,6 +515,9 @@ update()
 
   show_message info "[+] Updating cert-manager... "
   install_update_cert_manager
+
+  show_message info "[+] Updating Knative... "
+  install_update_knative
 
   show_message info "[+] Updating c8s... "
   install_update_c8s
@@ -546,7 +538,7 @@ clean(){
   check_user
 
   show_message warn "This action will remove packages listed below and all configuration files belonging to them:
-  \n* k3s\n* Kata Containers\n* c8s\n* Moneyd"
+  \n* k3s\n* Kata Containers\n* c8s"
 
   new_line
   read -p "Continue Anyway? [y/N]: " -e CONTINUE
@@ -564,146 +556,6 @@ clean(){
   printf "\n\n"
 
   exit 0
-}
-
-
-################### DEBUG ###########################
-debug(){
-
-  # active debug for commands
-  export DEBUG=*
-  # get hostname
-  local HOSTNAME=$(hostname)
-  # some env variables
-  export CODIUS_PUBLIC_URI=https://$HOSTNAME
-
-
-  local services=( hyperd moneyd c8s nginx )
-  local commands=( node npm hyperd hyperctl moneyd c8s certbot )
-  local debug_commands=('node -v ; npm -v ; yarn -v'
-    'hyperd run -t test /bin/sh'
-    'hyperctl info'
-    'hyperctl list'
-    'moneyd xrp:start'
-    'moneyd xrp:info'
-    'c8s'
-    'netstat -tulpn'
-  )
-
-
-  new_line
-  # check for codius avaiblity throught URL
-  status="$(curl -Is https://${HOSTNAME}/version | head -1)"
-  if [[ $status ]]; then
-    validate=( $status )
-    if [ ${validate[-2]} == "200" ]; then
-        show_message success "[*] It looks likes c8s is running properly in your host."
-        new_line
-        read -p "Continue Anyway ? [y/N]: " -e CONTINUE
-
-        if ! [[ "$CONTINUE" = 'y' || "$CONTINUE" = 'Y' ]]; then
-          exit 0
-        fi
-
-    else
-        show_message warn "It looks like c8s is not running as expected ..."
-    fi
-  else
-     show_message warn "It looks like c8s is not running as expected..."
-  fi
-
-
-  show_message info "[+] Start Debuging ..."
-  printf "\n\n"
-  _box "Checking required installed packages"
-  new_line
-  echo "------------------------------------------"
-  printf "%-20s %-5s\n" "PACKAGE" "STATUS"
-  echo "------------------------------------------"
-  for i in "${commands[@]}"
-  do
-    printf "%-20s %-5s" $i $(echo_if $(program_is_installed $i))
-    printf "\n"
-  done
-
-  new_line
-  _box "Checking required running services"
-  new_line
-  echo "------------------------------------------"
-  printf "%-20s %-5s\n" "SERVICE" "STATUS"
-  echo "------------------------------------------"
-  for i in "${services[@]}"
-  do
-    printf "%-20s %-5s" $i $(echo_if $(service_is_running $i))
-    printf "\n"
-  done
-
-
-  show_message info "[?] Creating full services log file?"
-  show_message warn "With this action all c8s services will restart for debuging."
-  new_line
-  read -p "Do you want to continue ? [y/N]: " -e DEBUG
-  if ! [[ "$DEBUG" = 'y' || "$DEBUG" = 'Y' ]]; then
-    exit 0
-  fi
-
-
-  local TMPFILE="/tmp/codius_debug-$(date +%Y-%m-%d.%H-%M)"
-
-  show_message info "[!] Stoping services... "
-  for i in "${services[@]}"
-  do
-    if [ "$i" = moneyd ]; then i='moneyd-xrp'; fi
-    if [[ "${INIT_SYSTEM}" == "systemd" ]];then
-      ${SUDO} systemctl stop $i >>"${TMPFILE}" 2>&1 
-    else 
-      ${SUDO} service $i stop >>"${TMPFILE}" 2>&1
-    fi
- done
-
-  show_message info "[!] Execute services and commands in debug mode ... "
-  show_message info "[*] This will take some time..."
-  for c in "${debug_commands[@]}"
-  do
-    echo -e "\n==================================" >> "${TMPFILE}"
-    echo "${c}" >> "${TMPFILE}"
-    echo -e "==================================\n" >> "${TMPFILE}"
-    exec 3>$(tty)
-      exec 3>&-
-
-    eval "${SUDO} bash -c '${c}'" >>"${TMPFILE}" 2>&1  &
-    sleep 20
-    exec 3>&-
-  done
-
-  show_message info "[!] Killing debug proccess..."
-  commands_to_kill=(moneyd c8s hyperd)
-  for p in "${commands_to_kill[@]}"
-  do
-    ${SUDO} kill -9 $(ps -ef|grep $p |grep -v "grep"|awk '{print $2}') || true
-  done
-
-  show_message info "[+] Starting services... "
-  for i in "${services[@]}"
-  do
-    if [[ $i = moneyd ]]; then i='moneyd-xrp'; fi
-    if [[ "${INIT_SYSTEM}" == "systemd" ]];then
-      ${SUDO} systemctl restart $i >>"${TMPFILE}" 2>&1 || true
-    else 
-      ${SUDO} service $i restart >>"${TMPFILE}" 2>&1 || true
-    fi
-  done
-
-  new_line
-  printf '%*s\n' "${COLUMNS:-$(tput cols)}" '' | tr ' ' =
-  show_message done "[!] The debuging proccess is done."
-  new_line
-  show_message done "[-] Please check $TMPFILE for full log output ."
-  printf '%*s\n' "${COLUMNS:-$(tput cols)}" '' | tr ' ' =
-
-
-  exit
-
 }
 
 
@@ -745,7 +597,6 @@ do
 
   echo "What do you want to do?"
                   echo "   1) Install and run c8s in your system"
-                  # echo "   2) Check your system for c8s errors"
                   echo "   2) Cleanup c8s from the server"
                   echo "   3) Update c8s components to the latest versions"
                   echo "   4) Exit"
@@ -753,7 +604,6 @@ do
 
   case $option in
     1)install;;
-    # 2)debug;;
     2)clean;;
     3)update;;
     4)exit;;
