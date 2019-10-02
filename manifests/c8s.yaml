@@ -92,6 +92,7 @@ metadata:
   namespace: c8s
   labels:
     app: c8s
+    serving.knative.dev/visibility: cluster-local
 spec:
   template:
     metadata:
@@ -99,7 +100,6 @@ spec:
         autoscaling.knative.dev/minScale: "1"
       labels:
         app: c8s
-        serving.knative.dev/visibility: cluster-local
     spec:
       containers:
       - image: wilsonianbcoil/c8s
