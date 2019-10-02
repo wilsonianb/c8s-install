@@ -33,8 +33,8 @@ CURL_C="curl -SL -o"
 LOG_OUTPUT="/tmp/${0##*/}$(date +%Y-%m-%d.%H-%M)"
 CURRENT_USER="$(id -un 2>/dev/null || true)"
 BASE_DIR=$(cd "$(dirname "$0")"; pwd); cd ${BASE_DIR}
-INSTALLER_URL="https://raw.githubusercontent.com/wilsonianb/codius-install/c8s/c8s-install.sh"
-K8S_MANIFEST_PATH="https://raw.githubusercontent.com/wilsonianb/codius-install/c8s/manifests"
+INSTALLER_URL="https://raw.githubusercontent.com/wilsonianb/c8s-install/master/c8s-install.sh"
+K8S_MANIFEST_PATH="https://raw.githubusercontent.com/wilsonianb/c8s-install/master/manifests"
 ########## k3s ##########
 K3S_URL="https://raw.githubusercontent.com/rancher/k3s/v0.9.0/install.sh"
 K3S_VERSION=`echo "$K3S_URL" | grep -Po 'v\d+.\d+.\d+'`

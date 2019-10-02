@@ -6,4 +6,4 @@ This script will let you setup your own c8s host in minutes, even if you haven't
 ### Installation
 Run the script and follow the assistant:
 
-`wget https://raw.githubusercontent.com/wilsonianb/codius-install/c8s/c8s-install.sh -O c8s-install.sh && bash c8s-install.sh`
+`wget https://raw.githubusercontent.com/wilsonianb/c8s-install/master/c8s-install.sh -O c8s-install.sh && bash c8s-install.sh`
