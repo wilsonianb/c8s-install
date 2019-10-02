@@ -261,7 +261,7 @@ install_update_c8s() {
   _exec kubectl wait service.serving.knative.dev/c8s --for=condition=Ready --timeout=60s -n c8s
   ${SUDO} ${CURL_C} /tmp/c8s-virtual-service.yaml "${K8S_MANIFEST_PATH}/c8s-virtual-service.yaml" >>"${LOG_OUTPUT}" 2>&1
   sed -i s/c8s.example.com/$HOSTNAME/g /tmp/c8s-virtual-service.yaml
-  sed -i s/c8s-service/`kubectl get service -n c8s --selector networking.internal.knative.dev/serviceType=Public -o jsonpath='{.items[*].metadata.name}'`/g /tmp/c8s-virtual-service.yaml
+  sed -i s/c8s-service/`kubectl get ksvc -n c8s c8s -o jsonpath='{.status.latestReadyRevisionName}'`/g /tmp/c8s-virtual-service.yaml
   _exec kubectl apply -f /tmp/c8s-virtual-service.yaml
 }
 
